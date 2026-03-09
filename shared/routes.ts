@@ -102,6 +102,24 @@ export const api = {
       input: z.object({ prompt: z.string() }),
       responses: { 200: z.object({ answer: z.string() }) }
     },
+    financialHealth: {
+      method: 'GET' as const,
+      path: '/api/ai/financial-health' as const,
+      responses: {
+        200: z.object({
+          score: z.number(),
+          summary: z.string(),
+          insights: z.array(z.string()),
+          recommendations: z.array(z.string()),
+          breakdown: z.object({
+            savingsRate: z.number(),
+            budgetAdherence: z.number(),
+            categoryBalance: z.number(),
+            incomeExpenseRatio: z.number(),
+          })
+        })
+      }
+    }
   }
 };
 

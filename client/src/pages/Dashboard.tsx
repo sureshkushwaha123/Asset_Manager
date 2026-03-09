@@ -1,8 +1,9 @@
 import { useTransactions } from "@/hooks/use-transactions";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useFinancialHealth } from "@/hooks/use-financial-health";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, TrendingUp } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { format, subMonths, isAfter } from "date-fns";
 import { useMemo } from "react";
@@ -12,6 +13,7 @@ const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#14B8A6'
 export default function Dashboard() {
   const { data: accountsData } = useAccounts();
   const { data: transactionsData } = useTransactions();
+  const { data: healthData, isLoading: healthLoading } = useFinancialHealth();
 
   // Computations
   const totalBalance = useMemo(() => {
@@ -106,6 +108,56 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Financial Health Card */}
+        {healthData && (
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-white">
+                <TrendingUp className="w-5 h-5 text-emerald-500" />
+                Financial Health
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground mb-2">Health Score</p>
+                  <div className="text-4xl font-bold text-emerald-500">{healthData.score}</div>
+                  <p className="text-xs text-muted-foreground mt-1">/100</p>
+                </div>
+                <div className="w-24 h-24 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-emerald-500">{healthData.score}%</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="pt-4 border-t border-white/10">
+                <p className="text-sm text-white/80 italic mb-3">{healthData.summary}</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Key Insights</p>
+                {healthData.insights.slice(0, 2).map((insight, i) => (
+                  <p key={i} className="text-sm text-white/70 flex items-start gap-2">
+                    <span className="text-emerald-500 mt-0.5">•</span>
+                    <span>{insight}</span>
+                  </p>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase">Recommendations</p>
+                {healthData.recommendations.slice(0, 2).map((rec, i) => (
+                  <p key={i} className="text-sm text-white/70 flex items-start gap-2">
+                    <span className="text-amber-500 mt-0.5">→</span>
+                    <span>{rec}</span>
+                  </p>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

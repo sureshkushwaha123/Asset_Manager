@@ -219,6 +219,136 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
     }
   });
 
+  // ---- Financial Health Score Route ----
+  app.get(api.ai.financialHealth.path, authenticateToken, async (req: any, res) => {
+    try {
+      const result = await storage.getTransactions(req.user.id, { limit: 1000 });
+      const transactions = result.items;
+      const budgets = await storage.getBudgets(req.user.id);
+
+      // Calculate metrics
+      const totalIncome = transactions
+        .filter(t => t.type === "CREDIT")
+        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+
+      const totalExpense = transactions
+        .filter(t => t.type === "DEBIT")
+        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+
+      // 1. Savings Rate Score (max 30 points)
+      const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+      let savingsRateScore = 0;
+      if (savingsRate > 30) savingsRateScore = 30;
+      else if (savingsRate > 20) savingsRateScore = 20;
+      else if (savingsRate > 10) savingsRateScore = 10;
+
+      // 2. Budget Adherence Score (max 20 points)
+      let budgetAdherenceScore = 20;
+      if (budgets.length > 0) {
+        const categorySpending = transactions
+          .filter(t => t.type === "DEBIT")
+          .reduce((acc, t) => {
+            const cat = t.category;
+            acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
+            return acc;
+          }, {} as Record<string, number>);
+
+        let overBudgetCount = 0;
+        for (const budget of budgets) {
+          const spent = categorySpending[budget.category] || 0;
+          const limit = parseFloat(budget.monthlyLimit as unknown as string);
+          if (spent > limit) overBudgetCount++;
+        }
+
+        if (overBudgetCount > 0) budgetAdherenceScore -= 10 * overBudgetCount;
+      }
+
+      // 3. Category Balance Score (max 25 points)
+      const categorySpending = transactions
+        .filter(t => t.type === "DEBIT")
+        .reduce((acc, t) => {
+          const cat = t.category;
+          acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
+          return acc;
+        }, {} as Record<string, number>);
+
+      let categoryBalanceScore = 25;
+      const problematicCategories = ["Entertainment", "Shopping", "Subscription"];
+      for (const cat of problematicCategories) {
+        if (categorySpending[cat]) {
+          const percentage = (categorySpending[cat] / totalExpense) * 100;
+          if (percentage > 25) categoryBalanceScore -= 8;
+        }
+      }
+      categoryBalanceScore = Math.max(0, categoryBalanceScore);
+
+      // 4. Income/Expense Ratio Score (max 25 points)
+      const incomeExpenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 100;
+      let incomeExpenseScore = 0;
+      if (incomeExpenseRatio < 50) incomeExpenseScore = 25;
+      else if (incomeExpenseRatio < 70) incomeExpenseScore = 20;
+      else if (incomeExpenseRatio < 90) incomeExpenseScore = 10;
+
+      // Calculate total score
+      const score = Math.round(
+        Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore)
+      );
+
+      // Generate insights
+      const insights: string[] = [];
+      const topCategory = Object.entries(categorySpending).sort((a, b) => b[1] - a[1])[0];
+      if (topCategory) {
+        const percentage = ((topCategory[1] / totalExpense) * 100).toFixed(0);
+        insights.push(`You spend ${percentage}% on ${topCategory[0]}`);
+      }
+      insights.push(`Your savings rate is ${savingsRate.toFixed(1)}%`);
+      if (totalExpense > 0) {
+        insights.push(`Monthly expenses: $${totalExpense.toFixed(2)}`);
+      }
+
+      // Generate recommendations
+      const recommendations: string[] = [];
+      if (savingsRate < 20) recommendations.push("Try to increase your savings rate to 20% or more");
+      if (categorySpending["Entertainment"] && (categorySpending["Entertainment"] / totalExpense) * 100 > 20) {
+        recommendations.push("Consider reducing entertainment spending");
+      }
+      if (categorySpending["Shopping"] && (categorySpending["Shopping"] / totalExpense) * 100 > 20) {
+        recommendations.push("Look for opportunities to reduce shopping expenses");
+      }
+      if (categorySpending["Subscription"] && (categorySpending["Subscription"] / totalExpense) * 100 > 5) {
+        recommendations.push("Review and cancel unused subscriptions");
+      }
+      if (recommendations.length === 0) {
+        recommendations.push("Keep maintaining your current spending habits!");
+      }
+
+      // Generate summary using OpenAI
+      const summaryPrompt = `Based on a financial health score of ${score}/100 with savings rate of ${savingsRate.toFixed(1)}%, please write a 1-sentence summary of their financial health status. Be encouraging but honest.`;
+      const summaryResponse = await openai.chat.completions.create({
+        model: "gpt-5.1",
+        messages: [{ role: "user", content: summaryPrompt }],
+        max_completion_tokens: 50,
+      });
+      const summary = summaryResponse.choices[0]?.message?.content || "Your financial health is on track.";
+
+      res.json({
+        score,
+        summary,
+        insights,
+        recommendations,
+        breakdown: {
+          savingsRate: Math.round(savingsRate),
+          budgetAdherence: budgetAdherenceScore,
+          categoryBalance: categoryBalanceScore,
+          incomeExpenseRatio: Math.round(100 - incomeExpenseRatio),
+        },
+      });
+    } catch (err) {
+      console.error("Financial Health Error:", err);
+      res.status(500).json({ message: "Failed to calculate financial health score" });
+    }
+  });
+
   // Basic seed function if requested (not heavily needed here but good to have)
   app.post('/api/seed', async (req, res) => {
     // Hidden seed endpoint for demo purposes
