@@ -120,6 +120,15 @@ export const api = {
         })
       }
     }
+  },
+  reports: {
+    monthlyReport: {
+      method: 'GET' as const,
+      path: '/api/reports/monthly' as const,
+      responses: {
+        200: z.unknown(), // PDF binary data
+      }
+    }
   }
 };
 

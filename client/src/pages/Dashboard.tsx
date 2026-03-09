@@ -1,19 +1,32 @@
 import { useTransactions } from "@/hooks/use-transactions";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useFinancialHealth } from "@/hooks/use-financial-health";
+import { useDownloadMonthlyReport } from "@/hooks/use-report";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, TrendingUp, Download } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import { format, subMonths, isAfter } from "date-fns";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#14B8A6'];
 
 export default function Dashboard() {
+  const [isDownloading, setIsDownloading] = useState(false);
   const { data: accountsData } = useAccounts();
   const { data: transactionsData } = useTransactions();
   const { data: healthData, isLoading: healthLoading } = useFinancialHealth();
+  const downloadReport = useDownloadMonthlyReport();
+
+  const handleDownloadReport = async () => {
+    setIsDownloading(true);
+    try {
+      await downloadReport();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Computations
   const totalBalance = useMemo(() => {
@@ -112,11 +125,22 @@ export default function Dashboard() {
         {/* Financial Health Card */}
         {healthData && (
           <Card className="glass-card">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-white">
                 <TrendingUp className="w-5 h-5 text-emerald-500" />
                 Financial Health
               </CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDownloadReport}
+                disabled={isDownloading}
+                className="gap-2"
+                data-testid="button-download-report"
+              >
+                <Download className="w-4 h-4" />
+                {isDownloading ? "Generating..." : "Report"}
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">

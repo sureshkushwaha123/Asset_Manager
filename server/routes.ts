@@ -6,6 +6,7 @@ import { z } from "zod";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
+import PDFDocument from "pdfkit";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "fallback_secret_for_dev";
 
@@ -346,6 +347,144 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
     } catch (err) {
       console.error("Financial Health Error:", err);
       res.status(500).json({ message: "Failed to calculate financial health score" });
+    }
+  });
+
+  // ---- Monthly Financial Report PDF ----
+  app.get(api.reports.monthlyReport.path, authenticateToken, async (req: any, res) => {
+    try {
+      const result = await storage.getTransactions(req.user.id, { limit: 1000 });
+      const transactions = result.items;
+      const budgets = await storage.getBudgets(req.user.id);
+      const accounts = await storage.getAccounts(req.user.id);
+
+      // Calculate financial metrics
+      const totalIncome = transactions
+        .filter(t => t.type === "CREDIT")
+        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+
+      const totalExpense = transactions
+        .filter(t => t.type === "DEBIT")
+        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+
+      const categorySpending = transactions
+        .filter(t => t.type === "DEBIT")
+        .reduce((acc, t) => {
+          const cat = t.category;
+          acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
+          return acc;
+        }, {} as Record<string, number>);
+
+      const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+      const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance as unknown as string), 0);
+
+      // Calculate health score (simplified version)
+      let savingsRateScore = 0;
+      if (savingsRate > 30) savingsRateScore = 30;
+      else if (savingsRate > 20) savingsRateScore = 20;
+      else if (savingsRate > 10) savingsRateScore = 10;
+
+      let budgetAdherenceScore = 20;
+      if (budgets.length > 0) {
+        let overBudgetCount = 0;
+        for (const budget of budgets) {
+          const spent = categorySpending[budget.category] || 0;
+          const limit = parseFloat(budget.monthlyLimit as unknown as string);
+          if (spent > limit) overBudgetCount++;
+        }
+        if (overBudgetCount > 0) budgetAdherenceScore -= 10 * overBudgetCount;
+      }
+
+      let categoryBalanceScore = 25;
+      const problematicCategories = ["Entertainment", "Shopping", "Subscription"];
+      for (const cat of problematicCategories) {
+        if (categorySpending[cat]) {
+          const percentage = (categorySpending[cat] / totalExpense) * 100;
+          if (percentage > 25) categoryBalanceScore -= 8;
+        }
+      }
+      categoryBalanceScore = Math.max(0, categoryBalanceScore);
+
+      const incomeExpenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 100;
+      let incomeExpenseScore = 0;
+      if (incomeExpenseRatio < 50) incomeExpenseScore = 25;
+      else if (incomeExpenseRatio < 70) incomeExpenseScore = 20;
+      else if (incomeExpenseRatio < 90) incomeExpenseScore = 10;
+
+      const healthScore = Math.round(
+        Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore)
+      );
+
+      // Generate AI advice
+      const advicePrompt = `Based on income of $${totalIncome.toFixed(2)}, expenses of $${totalExpense.toFixed(2)}, and savings rate of ${savingsRate.toFixed(1)}%, provide 2-3 sentences of financial advice.`;
+      const adviceResponse = await openai.chat.completions.create({
+        model: "gpt-5.1",
+        messages: [{ role: "user", content: advicePrompt }],
+        max_completion_tokens: 100,
+      });
+      const aiAdvice = adviceResponse.choices[0]?.message?.content || "Maintain consistent spending habits and review your budget monthly.";
+
+      // Create PDF
+      const doc = new PDFDocument({ bufferPages: true, margin: 50 });
+      const chunks: Buffer[] = [];
+
+      doc.on("data", (chunk) => chunks.push(chunk));
+      doc.on("end", () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        res.contentType("application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="Financial_Report_${new Date().toISOString().split('T')[0]}.pdf"`);
+        res.send(pdfBuffer);
+      });
+
+      // Title
+      doc.fontSize(24).font("Helvetica-Bold").text("Monthly Financial Report", { align: "center" });
+      doc.fontSize(12).font("Helvetica").text(`Generated: ${new Date().toLocaleDateString()}`, { align: "center" });
+      doc.moveDown();
+
+      // Summary Section
+      doc.fontSize(14).font("Helvetica-Bold").text("Financial Summary");
+      doc.fontSize(11).font("Helvetica");
+      doc.text(`Total Income: $${totalIncome.toFixed(2)}`);
+      doc.text(`Total Expenses: $${totalExpense.toFixed(2)}`);
+      doc.text(`Net Savings: $${(totalIncome - totalExpense).toFixed(2)}`);
+      doc.text(`Savings Rate: ${savingsRate.toFixed(1)}%`);
+      doc.text(`Current Balance: $${totalBalance.toFixed(2)}`);
+      doc.moveDown();
+
+      // Category Breakdown
+      doc.fontSize(14).font("Helvetica-Bold").text("Spending by Category");
+      doc.fontSize(10).font("Helvetica");
+      const sortedCategories = Object.entries(categorySpending).sort((a, b) => b[1] - a[1]);
+      sortedCategories.forEach(([category, amount]) => {
+        const percentage = totalExpense > 0 ? ((amount / totalExpense) * 100).toFixed(1) : "0.0";
+        doc.text(`• ${category}: $${amount.toFixed(2)} (${percentage}%)`);
+      });
+      doc.moveDown();
+
+      // Financial Health Score
+      doc.fontSize(14).font("Helvetica-Bold").text("Financial Health Score");
+      doc.fontSize(12).font("Helvetica");
+      doc.text(`Score: ${healthScore}/100`, { underline: true });
+      doc.fontSize(10);
+      doc.text(`Savings Rate: ${savingsRateScore}/30 points`);
+      doc.text(`Budget Adherence: ${budgetAdherenceScore}/20 points`);
+      doc.text(`Category Balance: ${categoryBalanceScore}/25 points`);
+      doc.text(`Income/Expense Ratio: ${incomeExpenseScore}/25 points`);
+      doc.moveDown();
+
+      // AI Advice
+      doc.fontSize(14).font("Helvetica-Bold").text("Financial Advice");
+      doc.fontSize(11).font("Helvetica");
+      doc.text(aiAdvice, { align: "left", width: 400 });
+      doc.moveDown();
+
+      // Footer
+      doc.fontSize(9).fillColor("#999999").text("This report is confidential and for personal use only.", { align: "center" });
+
+      doc.end();
+    } catch (err) {
+      console.error("Report Generation Error:", err);
+      res.status(500).json({ message: "Failed to generate report" });
     }
   });
 
