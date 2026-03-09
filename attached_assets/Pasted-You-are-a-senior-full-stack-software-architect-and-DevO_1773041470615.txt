@@ -1,0 +1,388 @@
+You are a senior full-stack software architect and DevOps engineer.
+
+Your task is to build a COMPLETE production-ready application called:
+
+AI Powered Personal Finance Manager
+
+This is a final year B.Tech major project. The application must include a secure backend, AI integration, a modern frontend dashboard, and full deployment setup.
+
+Use best practices used in real industry systems.
+
+--------------------------------------------------
+TECH STACK
+--------------------------------------------------
+
+Backend
+- Java Spring Boot 3.x
+- Spring Security
+- JWT Authentication
+- Spring Data JPA
+- PostgreSQL
+- Redis caching
+- Spring AI (OpenAI OR Ollama local LLM)
+- Lombok
+- Maven
+
+Frontend
+- React.js (Vite)
+- Tailwind CSS
+- Axios
+- React Router
+- Recharts for analytics dashboard
+
+DevOps
+- Docker
+- Docker Compose
+- Swagger / OpenAPI
+- JUnit + Mockito testing
+- WireMock for external bank API simulation
+
+--------------------------------------------------
+APPLICATION PURPOSE
+--------------------------------------------------
+
+The application allows users to track financial transactions, categorize spending using AI, view analytics dashboards, create budgets, and receive smart financial insights from an AI assistant.
+
+--------------------------------------------------
+DATABASE DESIGN
+--------------------------------------------------
+
+Create the following PostgreSQL entities:
+
+User
+- id
+- name
+- email
+- password
+- role (ROLE_USER, ROLE_ADMIN)
+- createdAt
+
+Account
+- id
+- userId
+- accountName
+- balance
+- accountType
+- createdAt
+
+Transaction
+- id
+- accountId
+- amount
+- type (DEBIT, CREDIT)
+- category
+- description
+- date
+
+Category
+- id
+- name
+- type (EXPENSE / INCOME)
+
+Budget
+- id
+- userId
+- category
+- monthlyLimit
+
+--------------------------------------------------
+BACKEND FEATURES
+--------------------------------------------------
+
+1. Authentication
+Implement secure JWT authentication using Spring Security.
+
+Endpoints:
+
+POST /auth/register
+POST /auth/login
+
+Password must be encrypted using BCrypt.
+
+Include role based authorization.
+
+--------------------------------------------------
+
+2. Transaction Management
+
+Create REST APIs:
+
+POST /transactions
+GET /transactions
+GET /transactions/filter?type=DEBIT
+GET /transactions/filter?dateRange=
+GET /transactions/summary
+
+Features:
+- add transaction
+- filter by date
+- filter by debit/credit
+- pagination
+
+--------------------------------------------------
+
+3. AI Powered Categorization
+
+When a transaction is created:
+
+Example input
+description = "Netflix"
+
+AI should categorize it automatically.
+
+Example response
+category = "Entertainment"
+
+Use Spring AI with OpenAI OR Ollama.
+
+Prompt example:
+"Classify this transaction into a financial category: Netflix"
+
+Possible categories:
+Food
+Travel
+Bills
+Entertainment
+Subscription
+Shopping
+Other
+
+--------------------------------------------------
+
+4. AI Financial Advisor Chatbot
+
+Create endpoint
+
+POST /ai/ask
+
+Example prompt from user:
+
+"How much did I spend on coffee this month and can I afford a new phone?"
+
+Steps:
+
+1 Query user's transactions from PostgreSQL
+2 Format the data
+3 Send to LLM using prompt engineering
+4 Return financial advice
+
+Ensure the AI only sees that user's data.
+
+--------------------------------------------------
+
+5. Budget System
+
+Users can define monthly budgets per category.
+
+Example
+
+Food = ₹5000
+
+When spending reaches:
+
+80% → send warning
+100% → send alert
+
+Store alerts in database.
+
+--------------------------------------------------
+
+6. Redis Caching
+
+Use Redis to cache:
+
+- current account balance
+- monthly spending summary
+
+Invalidate cache when new transaction added.
+
+--------------------------------------------------
+
+7. Security Enhancements
+
+Encrypt sensitive information using Spring Security Crypto.
+
+Implement:
+
+- input validation
+- exception handling
+- secure API responses
+
+--------------------------------------------------
+
+8. External Bank API Simulation
+
+Use WireMock to simulate a real bank API.
+
+Example endpoint
+
+GET /external/bank/transactions
+
+Return mock transaction data.
+
+--------------------------------------------------
+
+9. API Documentation
+
+Use Swagger / OpenAPI.
+
+Generate interactive documentation at:
+
+/swagger-ui.html
+
+--------------------------------------------------
+
+FRONTEND FEATURES
+--------------------------------------------------
+
+Build a modern dashboard using React.
+
+Pages:
+
+Login
+Register
+Dashboard
+Transactions
+Budget
+AI Advisor
+
+--------------------------------------------------
+
+Dashboard Components
+
+1 Spending Pie Chart
+Use Recharts
+
+Categories breakdown.
+
+2 Monthly Spending Line Chart
+
+3 Spending Heatmap
+
+--------------------------------------------------
+
+Transactions Page
+
+Features:
+
+- Add transaction form
+- Transaction table
+- Filters
+- Search
+
+--------------------------------------------------
+
+Budget Page
+
+Features:
+
+- Set monthly budgets
+- Progress bars
+- Warning alerts
+
+--------------------------------------------------
+
+AI Advisor Page
+
+Chat interface where user asks financial questions.
+
+Example:
+
+"Where did I spend most money this month?"
+
+--------------------------------------------------
+
+STATE MANAGEMENT
+
+Use React Context or simple hooks.
+
+Store JWT token securely.
+
+--------------------------------------------------
+
+DEPLOYMENT SETUP
+
+Create:
+
+Dockerfile for Spring Boot
+Dockerfile for React
+docker-compose.yml
+
+Services:
+
+backend
+frontend
+postgres
+redis
+
+--------------------------------------------------
+
+TESTING
+
+Create JUnit + Mockito tests for:
+
+TransactionService
+AIService
+AuthService
+
+Coverage should include:
+
+- successful transaction creation
+- AI categorization
+- authentication
+
+--------------------------------------------------
+
+PROJECT STRUCTURE
+
+Backend
+
+finance-ai-app
+ ├── controller
+ ├── service
+ ├── repository
+ ├── entity
+ ├── security
+ ├── config
+ ├── dto
+ ├── exception
+ ├── ai
+
+Frontend
+
+finance-ai-dashboard
+ ├── components
+ ├── pages
+ ├── services
+ ├── hooks
+
+--------------------------------------------------
+
+BONUS FEATURES
+
+Add:
+
+• CSV export of transactions
+• PDF Monthly Financial Health Report using Thymeleaf
+• Dark mode dashboard
+• Pagination for transactions
+
+--------------------------------------------------
+
+OUTPUT REQUIREMENTS
+
+Generate:
+
+1 Complete Spring Boot backend
+2 Complete React frontend
+3 SQL schema
+4 Docker setup
+5 README.md explaining
+   - architecture
+   - AI logic
+   - how to run project
+6 Example API requests
+
+Make the code clean, modular, and production ready.
+
+This is a final year engineering major project and must look professional.
