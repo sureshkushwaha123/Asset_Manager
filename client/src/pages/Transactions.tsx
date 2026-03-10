@@ -39,9 +39,11 @@ export default function Transactions() {
   const form = useForm<TransactionForm>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
+      accountId: 0,
       type: 'DEBIT',
       category: '',
       description: '',
+      amount: undefined,
     }
   });
 
@@ -79,14 +81,18 @@ export default function Transactions() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label className="text-white/80">Account</Label>
-                  <Select onValueChange={(v) => form.setValue('accountId', Number(v))}>
+                  <Select value={String(form.watch('accountId'))} onValueChange={(v) => form.setValue('accountId', Number(v))}>
                     <SelectTrigger className="bg-black/50 border-white/10 text-white h-12 rounded-xl">
                       <SelectValue placeholder="Select Account" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#18181b] border-white/10 text-white">
-                      {accounts?.map(acc => (
-                        <SelectItem key={acc.id} value={String(acc.id)}>{acc.accountName}</SelectItem>
-                      ))}
+                      {accounts && accounts.length > 0 ? (
+                        accounts.map(acc => (
+                          <SelectItem key={acc.id} value={String(acc.id)}>{acc.accountName}</SelectItem>
+                        ))
+                      ) : (
+                        <div className="p-2 text-sm text-muted-foreground">No accounts available. Create one first.</div>
+                      )}
                     </SelectContent>
                   </Select>
                   {form.formState.errors.accountId && <p className="text-sm text-destructive">{form.formState.errors.accountId.message}</p>}

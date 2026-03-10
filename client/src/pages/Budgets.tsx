@@ -30,11 +30,21 @@ export default function Budgets() {
 
   const form = useForm<BudgetForm>({
     resolver: zodResolver(budgetSchema),
-    defaultValues: { alertThreshold: 80 }
+    defaultValues: { 
+      category: '',
+      monthlyLimit: undefined,
+      alertThreshold: 80 
+    }
   });
 
   const onSubmit = (data: BudgetForm) => {
-    createBudget.mutate(data, {
+    // Ensure all required fields are present and valid
+    const validatedData = {
+      category: data.category,
+      monthlyLimit: Number(data.monthlyLimit),
+      alertThreshold: Number(data.alertThreshold || 80)
+    };
+    createBudget.mutate(validatedData, {
       onSuccess: () => {
         setIsDialogOpen(false);
         form.reset();
