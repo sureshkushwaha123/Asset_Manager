@@ -155,10 +155,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post(api.budgets.create.path, authenticateToken, async (req: any, res) => {
     try {
-      const input = api.budgets.create.input.parse(req.body);
+      // numeric columns from drizzle-zod expect strings; coerce numbers to strings
+      const budgetBodySchema = z.object({
+        category: z.string().min(1, "Category is required"),
+        monthlyLimit: z.union([z.string(), z.number()]).transform(v => String(v)),
+        alertThreshold: z.union([z.string(), z.number()]).transform(v => String(v)).optional().default("80"),
+      });
+      const input = budgetBodySchema.parse(req.body);
       const budget = await storage.createBudget({ ...input, userId: req.user.id });
       res.status(201).json(budget);
-    } catch {
+    } catch (err) {
+      console.error("Budget creation error:", err);
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
       res.status(400).json({ message: "Invalid input" });
     }
   });
