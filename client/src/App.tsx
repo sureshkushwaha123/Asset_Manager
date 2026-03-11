@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
+import Accounts from "@/pages/Accounts";
 import Transactions from "@/pages/Transactions";
 import Budgets from "@/pages/Budgets";
 import AIAdvisor from "@/pages/AIAdvisor";
@@ -22,6 +23,9 @@ function Router() {
       {/* Protected Routes */}
       <Route path="/">
         {() => <ProtectedRoute><Dashboard /></ProtectedRoute>}
+      </Route>
+      <Route path="/accounts">
+        {() => <ProtectedRoute><Accounts /></ProtectedRoute>}
       </Route>
       <Route path="/transactions">
         {() => <ProtectedRoute><Transactions /></ProtectedRoute>}

@@ -1,12 +1,13 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth, useLogout } from "@/hooks/use-auth";
-import { LayoutDashboard, Wallet, PieChart, Sparkles, LogOut, Menu } from "lucide-react";
+import { LayoutDashboard, Wallet, PieChart, Sparkles, LogOut, Menu, Landmark } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/transactions", label: "Transactions", icon: Wallet },
   { href: "/budgets", label: "Budgets", icon: PieChart },
   { href: "/advisor", label: "AI Advisor", icon: Sparkles },
