@@ -11,6 +11,7 @@ import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Accounts from "@/pages/Accounts";
 import Transactions from "@/pages/Transactions";
+import Subscriptions from "@/pages/Subscriptions";
 import Budgets from "@/pages/Budgets";
 import AIAdvisor from "@/pages/AIAdvisor";
 
@@ -26,6 +27,9 @@ function Router() {
       </Route>
       <Route path="/accounts">
         {() => <ProtectedRoute><Accounts /></ProtectedRoute>}
+      </Route>
+      <Route path="/subscriptions">
+        {() => <ProtectedRoute><Subscriptions /></ProtectedRoute>}
       </Route>
       <Route path="/transactions">
         {() => <ProtectedRoute><Transactions /></ProtectedRoute>}

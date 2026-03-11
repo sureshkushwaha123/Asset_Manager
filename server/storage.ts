@@ -1,27 +1,40 @@
 import { db } from "./db";
-import { 
-  users, accounts, transactions, budgets,
+import {
+  users, accounts, transactions, budgets, subscriptions, notifications,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Transaction, type InsertTransaction,
-  type Budget, type InsertBudget
+  type Budget, type InsertBudget,
+  type Subscription, type InsertSubscription,
+  type Notification, type InsertNotification,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, lte, gte } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+
   getAccounts(userId: number): Promise<Account[]>;
   createAccount(account: InsertAccount): Promise<Account>;
-  
-  getTransactions(userId: number, filters?: { type?: string, limit?: number, offset?: number }): Promise<{ items: Transaction[], total: number }>;
+
+  getTransactions(userId: number, filters?: { type?: string; recurring?: boolean; limit?: number; offset?: number }): Promise<{ items: Transaction[]; total: number }>;
   getTransactionSummary(userId: number): Promise<any>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  
+
   getBudgets(userId: number): Promise<Budget[]>;
   createBudget(budget: InsertBudget): Promise<Budget>;
+
+  // Subscriptions
+  getSubscriptions(userId: number): Promise<Subscription[]>;
+  getUpcomingSubscriptions(userId: number, withinDays?: number): Promise<Subscription[]>;
+  getSubscriptionSummary(userId: number): Promise<{ totalMonthlySubscriptionSpend: number; activeSubscriptionCount: number }>;
+  deactivateSubscription(id: number, userId: number): Promise<void>;
+  upsertSubscription(data: Omit<InsertSubscription, never>): Promise<Subscription>;
+
+  // Notifications
+  getNotifications(userId: number): Promise<Notification[]>;
+  markNotificationRead(id: number, userId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -49,62 +62,53 @@ export class DatabaseStorage implements IStorage {
     return newAccount;
   }
 
-  async getTransactions(userId: number, filters?: { type?: string, limit?: number, offset?: number }): Promise<{ items: Transaction[], total: number }> {
-    let query = db.select().from(transactions).where(eq(transactions.userId, userId));
-    
-    if (filters?.type) {
-      query = db.select().from(transactions).where(and(
-        eq(transactions.userId, userId),
-        eq(transactions.type, filters.type)
-      ));
-    }
-    
-    // Simplistic total count for now
-    const allItems = await query;
+  async getTransactions(
+    userId: number,
+    filters?: { type?: string; recurring?: boolean; limit?: number; offset?: number }
+  ): Promise<{ items: Transaction[]; total: number }> {
+    const conditions = [eq(transactions.userId, userId)];
+    if (filters?.type) conditions.push(eq(transactions.type, filters.type));
+    if (filters?.recurring !== undefined) conditions.push(eq(transactions.isRecurring, filters.recurring));
+
+    const allItems = await db.select().from(transactions).where(and(...conditions));
     const total = allItems.length;
 
-    let paginatedQuery = query.orderBy(desc(transactions.date));
-    
-    if (filters?.limit) {
-      paginatedQuery = paginatedQuery.limit(filters.limit) as any;
-    }
-    if (filters?.offset) {
-      paginatedQuery = paginatedQuery.offset(filters.offset) as any;
-    }
-    
+    let paginatedQuery: any = db
+      .select()
+      .from(transactions)
+      .where(and(...conditions))
+      .orderBy(desc(transactions.date));
+
+    if (filters?.limit) paginatedQuery = paginatedQuery.limit(filters.limit);
+    if (filters?.offset) paginatedQuery = paginatedQuery.offset(filters.offset);
+
     const items = await paginatedQuery;
     return { items, total };
   }
 
   async getTransactionSummary(userId: number): Promise<any> {
-    const result = await db.select({
-      category: transactions.category,
-      total: sql<number>`sum(${transactions.amount})`
-    })
-    .from(transactions)
-    .where(and(eq(transactions.userId, userId), eq(transactions.type, 'DEBIT')))
-    .groupBy(transactions.category);
-    
-    return result;
+    return await db
+      .select({
+        category: transactions.category,
+        total: sql<number>`sum(${transactions.amount})`,
+      })
+      .from(transactions)
+      .where(and(eq(transactions.userId, userId), eq(transactions.type, "DEBIT")))
+      .groupBy(transactions.category);
   }
 
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
     const [newTransaction] = await db.insert(transactions).values(transaction).returning();
-    
+
     // Update account balance
     const [account] = await db.select().from(accounts).where(eq(accounts.id, transaction.accountId));
     if (account) {
       const amount = parseFloat(transaction.amount as unknown as string);
       const currentBalance = parseFloat(account.balance as unknown as string);
-      const newBalance = transaction.type === 'CREDIT' 
-        ? currentBalance + amount 
-        : currentBalance - amount;
-        
-      await db.update(accounts)
-        .set({ balance: newBalance.toString() })
-        .where(eq(accounts.id, account.id));
+      const newBalance = transaction.type === "CREDIT" ? currentBalance + amount : currentBalance - amount;
+      await db.update(accounts).set({ balance: newBalance.toString() }).where(eq(accounts.id, account.id));
     }
-    
+
     return newTransaction;
   }
 
@@ -115,6 +119,91 @@ export class DatabaseStorage implements IStorage {
   async createBudget(budget: InsertBudget): Promise<Budget> {
     const [newBudget] = await db.insert(budgets).values(budget).returning();
     return newBudget;
+  }
+
+  // ---- Subscriptions ----
+
+  async getSubscriptions(userId: number): Promise<Subscription[]> {
+    return await db
+      .select()
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, userId), eq(subscriptions.isActive, true)))
+      .orderBy(desc(subscriptions.confidenceScore));
+  }
+
+  async getUpcomingSubscriptions(userId: number, withinDays = 7): Promise<Subscription[]> {
+    const now = new Date();
+    const future = new Date(now.getTime() + withinDays * 24 * 60 * 60 * 1000);
+    return await db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.isActive, true),
+          gte(subscriptions.nextExpectedDate, now),
+          lte(subscriptions.nextExpectedDate, future)
+        )
+      )
+      .orderBy(subscriptions.nextExpectedDate);
+  }
+
+  async getSubscriptionSummary(userId: number): Promise<{ totalMonthlySubscriptionSpend: number; activeSubscriptionCount: number }> {
+    const subs = await this.getSubscriptions(userId);
+    let totalMonthlySubscriptionSpend = 0;
+    for (const sub of subs) {
+      const amt = parseFloat(sub.averageAmount as unknown as string);
+      if (sub.cycle === "monthly") totalMonthlySubscriptionSpend += amt;
+      else if (sub.cycle === "weekly") totalMonthlySubscriptionSpend += amt * 4.33;
+      else if (sub.cycle === "yearly") totalMonthlySubscriptionSpend += amt / 12;
+    }
+    return {
+      totalMonthlySubscriptionSpend: Math.round(totalMonthlySubscriptionSpend * 100) / 100,
+      activeSubscriptionCount: subs.length,
+    };
+  }
+
+  async deactivateSubscription(id: number, userId: number): Promise<void> {
+    await db
+      .update(subscriptions)
+      .set({ isActive: false })
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
+  }
+
+  async upsertSubscription(data: InsertSubscription): Promise<Subscription> {
+    const existing = await db
+      .select()
+      .from(subscriptions)
+      .where(and(eq(subscriptions.userId, data.userId), eq(subscriptions.merchantName, data.merchantName)));
+
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(subscriptions)
+        .set(data)
+        .where(eq(subscriptions.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db.insert(subscriptions).values(data).returning();
+    return created;
+  }
+
+  // ---- Notifications ----
+
+  async getNotifications(userId: number): Promise<Notification[]> {
+    return await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async markNotificationRead(id: number, userId: number): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
   }
 }
 

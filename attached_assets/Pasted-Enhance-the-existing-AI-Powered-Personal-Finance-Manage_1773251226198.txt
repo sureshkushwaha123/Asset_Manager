@@ -1,0 +1,219 @@
+Enhance the existing AI Powered Personal Finance Manager by implementing an advanced Recurring Subscription Detection and Intelligence Module.
+
+This feature must behave like a real fintech subscription tracking system.
+
+--------------------------------------------
+DATABASE CHANGES
+--------------------------------------------
+
+Update the transactions table:
+
+Add fields:
+
+isRecurring BOOLEAN DEFAULT false
+recurringCycle VARCHAR(20) NULL
+nextExpectedDate TIMESTAMP NULL
+recurringConfidence FLOAT DEFAULT 0
+
+Create new table:
+
+subscriptions
+
+Fields:
+
+id
+userId
+merchantName
+averageAmount
+cycle (monthly / weekly / yearly)
+lastDetectedDate
+nextExpectedDate
+confidenceScore
+isActive BOOLEAN DEFAULT true
+createdAt
+
+--------------------------------------------
+RECURRING DETECTION LOGIC
+--------------------------------------------
+
+When a new transaction is created:
+
+Run a background detection service.
+
+Steps:
+
+1. Find transactions of same user where merchantName similarity > 80%.
+2. Sort by date.
+3. Check if at least 3 transactions exist with:
+
+   - interval between 25–35 days (monthly cycle tolerance)
+   - amount variation < 15%
+   - same debit type
+
+4. If conditions match:
+
+   Mark latest transaction:
+
+   isRecurring = true
+   recurringCycle = "monthly"
+
+5. Calculate:
+
+confidenceScore based on:
+
+- interval consistency
+- amount consistency
+- number of repetitions
+
+6. Estimate nextExpectedDate:
+
+lastTransactionDate + detectedCycleInterval
+
+7. Insert or update record in subscriptions table.
+
+--------------------------------------------
+FALSE POSITIVE REDUCTION
+--------------------------------------------
+
+Add additional checks:
+
+- Ignore merchants categorized as groceries or fuel unless repeated > 5 times.
+- Use AI classification (OpenAI) to confirm if merchant is a subscription service.
+
+Prompt example:
+
+"Is Netflix a recurring subscription service? Answer YES or NO."
+
+Only mark recurring if AI confidence is positive.
+
+--------------------------------------------
+NEW BACKEND APIs
+--------------------------------------------
+
+Create:
+
+GET /subscriptions
+
+Return all active subscriptions for logged-in user.
+
+GET /subscriptions/upcoming
+
+Return subscriptions whose nextExpectedDate is within next 7 days.
+
+GET /subscriptions/summary
+
+Return:
+
+{
+ totalMonthlySubscriptionSpend,
+ activeSubscriptionCount
+}
+
+POST /subscriptions/deactivate/:id
+
+Allow user to mark subscription as cancelled.
+
+--------------------------------------------
+AI INSIGHT ENHANCEMENT
+--------------------------------------------
+
+Enhance financial advisor service:
+
+AI should now receive:
+
+- list of subscriptions
+- monthly subscription spend
+- upcoming auto-debits
+
+AI can generate advice like:
+
+"You are spending ₹1200 monthly on subscriptions. Canceling one can increase savings rate by 5%."
+
+--------------------------------------------
+NOTIFICATION SYSTEM
+--------------------------------------------
+
+When nextExpectedDate is within 3 days:
+
+Create notification:
+
+"Upcoming auto-debit expected for Netflix ₹499"
+
+Store in notifications table.
+
+--------------------------------------------
+REDIS CACHING
+--------------------------------------------
+
+Cache:
+
+subscriptions:userId
+subscriptionSummary:userId
+
+Invalidate cache when new recurring pattern detected.
+
+--------------------------------------------
+CRON JOB
+--------------------------------------------
+
+Create nightly cron job:
+
+- re-run subscription detection for all users
+- update nextExpectedDate
+- generate notifications
+
+--------------------------------------------
+FRONTEND IMPLEMENTATION
+--------------------------------------------
+
+Create new Dashboard Widget:
+
+Title: Active Subscriptions
+
+Display:
+
+Merchant Name
+Monthly Amount
+Next Debit Date
+Cancel Button
+
+Create Upcoming Subscription Alerts section.
+
+Create Subscription Summary Card:
+
+Total Monthly Subscription Spend
+Active Subscription Count
+
+--------------------------------------------
+UX ENHANCEMENTS
+--------------------------------------------
+
+Add:
+
+- subscription badge in transaction table
+- filter transactions by recurring
+- highlight upcoming debit in red
+
+--------------------------------------------
+TESTING
+--------------------------------------------
+
+Write tests for:
+
+- recurring detection logic
+- subscription creation
+- notification generation
+- API responses
+
+--------------------------------------------
+OUTPUT REQUIREMENT
+--------------------------------------------
+
+Update backend services
+Update database migrations
+Update React dashboard
+Update AI advisor prompt logic
+Add cron scheduler
+Add Redis integration
+
+Ensure clean modular code and production-ready structure.

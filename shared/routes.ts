@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { insertUserSchema, insertAccountSchema, insertTransactionSchema, insertBudgetSchema, users, accounts, transactions, budgets } from './schema';
+import { insertUserSchema, insertAccountSchema, insertTransactionSchema, insertBudgetSchema, users, accounts, transactions, budgets, subscriptions, notifications } from './schema';
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
@@ -56,11 +56,11 @@ export const api = {
       path: '/api/transactions' as const,
       input: z.object({
         type: z.enum(['DEBIT', 'CREDIT']).optional(),
-        dateRange: z.string().optional(),
+        recurring: z.boolean().optional(),
         page: z.number().optional(),
         limit: z.number().optional(),
       }).optional(),
-      responses: { 
+      responses: {
         200: z.object({
           items: z.array(z.custom<typeof transactions.$inferSelect>()),
           total: z.number()
@@ -70,12 +70,12 @@ export const api = {
     summary: {
       method: 'GET' as const,
       path: '/api/transactions/summary' as const,
-      responses: { 200: z.any() } 
+      responses: { 200: z.any() }
     },
     create: {
       method: 'POST' as const,
       path: '/api/transactions' as const,
-      input: insertTransactionSchema.omit({ userId: true, category: true, date: true }).extend({
+      input: insertTransactionSchema.omit({ userId: true, category: true, date: true, isRecurring: true, recurringCycle: true, nextExpectedDate: true, recurringConfidence: true }).extend({
         category: z.string().optional(),
         date: z.string().optional(),
       }),
@@ -93,6 +93,45 @@ export const api = {
       path: '/api/budgets' as const,
       input: insertBudgetSchema.omit({ userId: true }),
       responses: { 201: z.custom<typeof budgets.$inferSelect>() }
+    }
+  },
+  subscriptions: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/subscriptions' as const,
+      responses: { 200: z.array(z.custom<typeof subscriptions.$inferSelect>()) }
+    },
+    upcoming: {
+      method: 'GET' as const,
+      path: '/api/subscriptions/upcoming' as const,
+      responses: { 200: z.array(z.custom<typeof subscriptions.$inferSelect>()) }
+    },
+    summary: {
+      method: 'GET' as const,
+      path: '/api/subscriptions/summary' as const,
+      responses: {
+        200: z.object({
+          totalMonthlySubscriptionSpend: z.number(),
+          activeSubscriptionCount: z.number(),
+        })
+      }
+    },
+    deactivate: {
+      method: 'POST' as const,
+      path: '/api/subscriptions/deactivate/:id' as const,
+      responses: { 200: z.object({ message: z.string() }) }
+    }
+  },
+  notifications: {
+    list: {
+      method: 'GET' as const,
+      path: '/api/notifications' as const,
+      responses: { 200: z.array(z.custom<typeof notifications.$inferSelect>()) }
+    },
+    markRead: {
+      method: 'POST' as const,
+      path: '/api/notifications/:id/read' as const,
+      responses: { 200: z.object({ message: z.string() }) }
     }
   },
   ai: {
@@ -126,7 +165,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/reports/monthly' as const,
       responses: {
-        200: z.unknown(), // PDF binary data
+        200: z.unknown(),
       }
     }
   }

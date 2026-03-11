@@ -7,22 +7,19 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
+import { runSubscriptionDetection, runNightlyDetection } from "./subscriptionDetector";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "fallback_secret_for_dev";
 
-// Initialize OpenAI using Replit AI Integrations
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-// Middleware to authenticate JWT
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
   if (token == null) return res.status(401).json({ message: "No token provided" });
-
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) return res.status(401).json({ message: "Invalid token" });
     req.user = user;
@@ -30,32 +27,20 @@ const authenticateToken = (req: any, res: any, next: any) => {
   });
 };
 
-export async function registerRoutes(
-  httpServer: Server,
-  app: Express
-): Promise<Server> {
+export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
 
   // ---- Auth Routes ----
   app.post(api.auth.register.path, async (req, res) => {
     try {
       const input = api.auth.register.input.parse(req.body);
       const existingUser = await storage.getUserByUsername(input.username);
-      if (existingUser) {
-        return res.status(400).json({ message: "Username already exists" });
-      }
-
+      if (existingUser) return res.status(400).json({ message: "Username already exists" });
       const hashedPassword = await bcrypt.hash(input.password, 10);
-      const user = await storage.createUser({
-        ...input,
-        password: hashedPassword
-      });
-
+      const user = await storage.createUser({ ...input, password: hashedPassword });
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
       res.status(201).json({ user, token });
     } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -64,19 +49,12 @@ export async function registerRoutes(
     try {
       const input = api.auth.login.input.parse(req.body);
       const user = await storage.getUserByUsername(input.username);
-      
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
+      if (!user) return res.status(401).json({ message: "Invalid credentials" });
       const validPassword = await bcrypt.compare(input.password, user.password);
-      if (!validPassword) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
+      if (!validPassword) return res.status(401).json({ message: "Invalid credentials" });
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
       res.status(200).json({ user, token });
-    } catch (err) {
+    } catch {
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -98,7 +76,7 @@ export async function registerRoutes(
       const input = api.accounts.create.input.parse(req.body);
       const account = await storage.createAccount({ ...input, userId: req.user.id });
       res.status(201).json(account);
-    } catch (err) {
+    } catch {
       res.status(400).json({ message: "Invalid input" });
     }
   });
@@ -106,18 +84,17 @@ export async function registerRoutes(
   // ---- Transactions Routes ----
   app.get(api.transactions.list.path, authenticateToken, async (req: any, res) => {
     try {
-      const { type, page, limit } = req.query;
+      const { type, page, limit, recurring } = req.query;
       const filters: any = {};
       if (type) filters.type = type;
-      
+      if (recurring === 'true') filters.recurring = true;
       const limitNum = limit ? parseInt(limit as string) : 50;
       const pageNum = page ? parseInt(page as string) : 1;
       filters.limit = limitNum;
       filters.offset = (pageNum - 1) * limitNum;
-
       const result = await storage.getTransactions(req.user.id, filters);
       res.json(result);
-    } catch (err) {
+    } catch {
       res.status(500).json({ message: "Server error" });
     }
   });
@@ -129,16 +106,13 @@ export async function registerRoutes(
 
   app.post(api.transactions.create.path, authenticateToken, async (req: any, res) => {
     try {
-      // Create schema with string coercion for IDs to support form inputs
       const requestSchema = api.transactions.create.input.extend({
         accountId: z.coerce.number(),
         amount: z.string().or(z.number()).transform(v => String(v)),
       });
       const input = requestSchema.parse(req.body);
-      
+
       let category = input.category;
-      
-      // Auto-categorize using AI if no category provided
       if (!category) {
         try {
           const response = await openai.chat.completions.create({
@@ -150,8 +124,7 @@ export async function registerRoutes(
             max_completion_tokens: 10,
           });
           category = response.choices[0].message.content?.trim() || "Other";
-        } catch (error) {
-          console.error("AI categorization failed", error);
+        } catch {
           category = "Other";
         }
       }
@@ -160,14 +133,16 @@ export async function registerRoutes(
         ...input,
         userId: req.user.id,
         category: category!,
-        date: input.date ? new Date(input.date) : new Date()
+        date: input.date ? new Date(input.date) : new Date(),
       });
+
+      // Run subscription detection asynchronously (non-blocking)
+      setImmediate(() => runSubscriptionDetection(req.user.id).catch(console.error));
+
       res.status(201).json(transaction);
     } catch (err) {
       console.error(err);
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: err.errors[0].message });
-      }
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
       res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -183,27 +158,92 @@ export async function registerRoutes(
       const input = api.budgets.create.input.parse(req.body);
       const budget = await storage.createBudget({ ...input, userId: req.user.id });
       res.status(201).json(budget);
-    } catch (err) {
+    } catch {
       res.status(400).json({ message: "Invalid input" });
     }
   });
 
-  // ---- AI Advisor Route ----
+  // ---- Subscription Routes ----
+  app.get(api.subscriptions.list.path, authenticateToken, async (req: any, res) => {
+    try {
+      const subs = await storage.getSubscriptions(req.user.id);
+      res.json(subs);
+    } catch {
+      res.status(500).json({ message: "Failed to fetch subscriptions" });
+    }
+  });
+
+  app.get(api.subscriptions.upcoming.path, authenticateToken, async (req: any, res) => {
+    try {
+      const upcoming = await storage.getUpcomingSubscriptions(req.user.id, 7);
+      res.json(upcoming);
+    } catch {
+      res.status(500).json({ message: "Failed to fetch upcoming subscriptions" });
+    }
+  });
+
+  app.get(api.subscriptions.summary.path, authenticateToken, async (req: any, res) => {
+    try {
+      const summary = await storage.getSubscriptionSummary(req.user.id);
+      res.json(summary);
+    } catch {
+      res.status(500).json({ message: "Failed to fetch subscription summary" });
+    }
+  });
+
+  app.post('/api/subscriptions/deactivate/:id', authenticateToken, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deactivateSubscription(id, req.user.id);
+      res.json({ message: "Subscription cancelled" });
+    } catch {
+      res.status(500).json({ message: "Failed to deactivate subscription" });
+    }
+  });
+
+  // ---- Notification Routes ----
+  app.get(api.notifications.list.path, authenticateToken, async (req: any, res) => {
+    try {
+      const notifs = await storage.getNotifications(req.user.id);
+      res.json(notifs);
+    } catch {
+      res.status(500).json({ message: "Failed to fetch notifications" });
+    }
+  });
+
+  app.post('/api/notifications/:id/read', authenticateToken, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.markNotificationRead(id, req.user.id);
+      res.json({ message: "Marked as read" });
+    } catch {
+      res.status(500).json({ message: "Failed to mark notification" });
+    }
+  });
+
+  // ---- AI Advisor Route (enhanced with subscription context) ----
   app.post(api.ai.ask.path, authenticateToken, async (req: any, res) => {
     try {
       const input = api.ai.ask.input.parse(req.body);
-      
-      // Get user's context (transactions summary)
       const summary = await storage.getTransactionSummary(req.user.id);
       const accounts = await storage.getAccounts(req.user.id);
-      
-      const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance as unknown as string), 0);
-      
-      const contextStr = `User Financial Context:
-Total Balance: $${totalBalance}
-Spending by Category: ${JSON.stringify(summary)}
+      const subSummary = await storage.getSubscriptionSummary(req.user.id);
+      const upcomingSubs = await storage.getUpcomingSubscriptions(req.user.id, 7);
+      const subs = await storage.getSubscriptions(req.user.id);
 
-You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advice based on this context.`;
+      const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance as unknown as string), 0);
+
+      const subNames = subs.map(s => `${s.merchantName} ($${parseFloat(s.averageAmount as unknown as string).toFixed(2)}/${s.cycle})`).join(", ");
+      const upcomingNames = upcomingSubs.map(s => `${s.merchantName} on ${new Date(s.nextExpectedDate).toLocaleDateString()}`).join(", ");
+
+      const contextStr = `User Financial Context:
+Total Balance: $${totalBalance.toFixed(2)}
+Spending by Category: ${JSON.stringify(summary)}
+Active Subscriptions (${subSummary.activeSubscriptionCount}): ${subNames || "None"}
+Monthly Subscription Spend: $${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}
+Upcoming Auto-Debits (next 7 days): ${upcomingNames || "None"}
+
+You are a helpful AI Financial Advisor. Provide clear, actionable advice. Reference subscriptions when relevant.`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-5.1",
@@ -224,125 +264,71 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
   app.get(api.ai.financialHealth.path, authenticateToken, async (req: any, res) => {
     try {
       const result = await storage.getTransactions(req.user.id, { limit: 1000 });
-      const transactions = result.items;
+      const txList = result.items;
       const budgets = await storage.getBudgets(req.user.id);
 
-      // Calculate metrics
-      const totalIncome = transactions
-        .filter(t => t.type === "CREDIT")
-        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+      const totalIncome = txList.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+      const totalExpense = txList.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
 
-      const totalExpense = transactions
-        .filter(t => t.type === "DEBIT")
-        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
-
-      // 1. Savings Rate Score (max 30 points)
       const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
       let savingsRateScore = 0;
       if (savingsRate > 30) savingsRateScore = 30;
       else if (savingsRate > 20) savingsRateScore = 20;
       else if (savingsRate > 10) savingsRateScore = 10;
 
-      // 2. Budget Adherence Score (max 20 points)
+      const categorySpending = txList.filter(t => t.type === "DEBIT").reduce((acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + parseFloat(t.amount as unknown as string);
+        return acc;
+      }, {} as Record<string, number>);
+
       let budgetAdherenceScore = 20;
       if (budgets.length > 0) {
-        const categorySpending = transactions
-          .filter(t => t.type === "DEBIT")
-          .reduce((acc, t) => {
-            const cat = t.category;
-            acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
-            return acc;
-          }, {} as Record<string, number>);
-
         let overBudgetCount = 0;
         for (const budget of budgets) {
           const spent = categorySpending[budget.category] || 0;
           const limit = parseFloat(budget.monthlyLimit as unknown as string);
           if (spent > limit) overBudgetCount++;
         }
-
         if (overBudgetCount > 0) budgetAdherenceScore -= 10 * overBudgetCount;
       }
 
-      // 3. Category Balance Score (max 25 points)
-      const categorySpending = transactions
-        .filter(t => t.type === "DEBIT")
-        .reduce((acc, t) => {
-          const cat = t.category;
-          acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
-          return acc;
-        }, {} as Record<string, number>);
-
       let categoryBalanceScore = 25;
-      const problematicCategories = ["Entertainment", "Shopping", "Subscription"];
-      for (const cat of problematicCategories) {
-        if (categorySpending[cat]) {
-          const percentage = (categorySpending[cat] / totalExpense) * 100;
-          if (percentage > 25) categoryBalanceScore -= 8;
-        }
+      for (const cat of ["Entertainment", "Shopping", "Subscription"]) {
+        if (categorySpending[cat] && (categorySpending[cat] / totalExpense) * 100 > 25) categoryBalanceScore -= 8;
       }
       categoryBalanceScore = Math.max(0, categoryBalanceScore);
 
-      // 4. Income/Expense Ratio Score (max 25 points)
       const incomeExpenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 100;
       let incomeExpenseScore = 0;
       if (incomeExpenseRatio < 50) incomeExpenseScore = 25;
       else if (incomeExpenseRatio < 70) incomeExpenseScore = 20;
       else if (incomeExpenseRatio < 90) incomeExpenseScore = 10;
 
-      // Calculate total score
-      const score = Math.round(
-        Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore)
-      );
+      const score = Math.round(Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore));
 
-      // Generate insights
       const insights: string[] = [];
       const topCategory = Object.entries(categorySpending).sort((a, b) => b[1] - a[1])[0];
-      if (topCategory) {
-        const percentage = ((topCategory[1] / totalExpense) * 100).toFixed(0);
-        insights.push(`You spend ${percentage}% on ${topCategory[0]}`);
-      }
+      if (topCategory) insights.push(`You spend ${((topCategory[1] / totalExpense) * 100).toFixed(0)}% on ${topCategory[0]}`);
       insights.push(`Your savings rate is ${savingsRate.toFixed(1)}%`);
-      if (totalExpense > 0) {
-        insights.push(`Monthly expenses: $${totalExpense.toFixed(2)}`);
-      }
+      if (totalExpense > 0) insights.push(`Monthly expenses: $${totalExpense.toFixed(2)}`);
 
-      // Generate recommendations
       const recommendations: string[] = [];
       if (savingsRate < 20) recommendations.push("Try to increase your savings rate to 20% or more");
-      if (categorySpending["Entertainment"] && (categorySpending["Entertainment"] / totalExpense) * 100 > 20) {
-        recommendations.push("Consider reducing entertainment spending");
-      }
-      if (categorySpending["Shopping"] && (categorySpending["Shopping"] / totalExpense) * 100 > 20) {
-        recommendations.push("Look for opportunities to reduce shopping expenses");
-      }
-      if (categorySpending["Subscription"] && (categorySpending["Subscription"] / totalExpense) * 100 > 5) {
-        recommendations.push("Review and cancel unused subscriptions");
-      }
-      if (recommendations.length === 0) {
-        recommendations.push("Keep maintaining your current spending habits!");
-      }
+      if (categorySpending["Entertainment"] && (categorySpending["Entertainment"] / totalExpense) * 100 > 20) recommendations.push("Consider reducing entertainment spending");
+      if (categorySpending["Shopping"] && (categorySpending["Shopping"] / totalExpense) * 100 > 20) recommendations.push("Look for opportunities to reduce shopping expenses");
+      if (categorySpending["Subscription"] && (categorySpending["Subscription"] / totalExpense) * 100 > 5) recommendations.push("Review and cancel unused subscriptions");
+      if (recommendations.length === 0) recommendations.push("Keep maintaining your current spending habits!");
 
-      // Generate summary using OpenAI
-      const summaryPrompt = `Based on a financial health score of ${score}/100 with savings rate of ${savingsRate.toFixed(1)}%, please write a 1-sentence summary of their financial health status. Be encouraging but honest.`;
       const summaryResponse = await openai.chat.completions.create({
         model: "gpt-5.1",
-        messages: [{ role: "user", content: summaryPrompt }],
-        max_completion_tokens: 50,
+        messages: [{ role: "user", content: `Financial health score ${score}/100, savings rate ${savingsRate.toFixed(1)}%. Write a 1-sentence summary of their financial status. Be honest but encouraging.` }],
+        max_completion_tokens: 60,
       });
       const summary = summaryResponse.choices[0]?.message?.content || "Your financial health is on track.";
 
       res.json({
-        score,
-        summary,
-        insights,
-        recommendations,
-        breakdown: {
-          savingsRate: Math.round(savingsRate),
-          budgetAdherence: budgetAdherenceScore,
-          categoryBalance: categoryBalanceScore,
-          incomeExpenseRatio: Math.round(100 - incomeExpenseRatio),
-        },
+        score, summary, insights, recommendations,
+        breakdown: { savingsRate: Math.round(savingsRate), budgetAdherence: budgetAdherenceScore, categoryBalance: categoryBalanceScore, incomeExpenseRatio: Math.round(100 - incomeExpenseRatio) },
       });
     } catch (err) {
       console.error("Financial Health Error:", err);
@@ -354,54 +340,36 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
   app.get(api.reports.monthlyReport.path, authenticateToken, async (req: any, res) => {
     try {
       const result = await storage.getTransactions(req.user.id, { limit: 1000 });
-      const transactions = result.items;
+      const txList = result.items;
       const budgets = await storage.getBudgets(req.user.id);
       const accounts = await storage.getAccounts(req.user.id);
+      const subSummary = await storage.getSubscriptionSummary(req.user.id);
+      const subs = await storage.getSubscriptions(req.user.id);
 
-      // Calculate financial metrics
-      const totalIncome = transactions
-        .filter(t => t.type === "CREDIT")
-        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
-
-      const totalExpense = transactions
-        .filter(t => t.type === "DEBIT")
-        .reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
-
-      const categorySpending = transactions
-        .filter(t => t.type === "DEBIT")
-        .reduce((acc, t) => {
-          const cat = t.category;
-          acc[cat] = (acc[cat] || 0) + parseFloat(t.amount as unknown as string);
-          return acc;
-        }, {} as Record<string, number>);
+      const totalIncome = txList.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+      const totalExpense = txList.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
+      const categorySpending = txList.filter(t => t.type === "DEBIT").reduce((acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + parseFloat(t.amount as unknown as string);
+        return acc;
+      }, {} as Record<string, number>);
 
       const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
       const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance as unknown as string), 0);
 
-      // Calculate health score (simplified version)
       let savingsRateScore = 0;
       if (savingsRate > 30) savingsRateScore = 30;
       else if (savingsRate > 20) savingsRateScore = 20;
       else if (savingsRate > 10) savingsRateScore = 10;
 
       let budgetAdherenceScore = 20;
-      if (budgets.length > 0) {
-        let overBudgetCount = 0;
-        for (const budget of budgets) {
-          const spent = categorySpending[budget.category] || 0;
-          const limit = parseFloat(budget.monthlyLimit as unknown as string);
-          if (spent > limit) overBudgetCount++;
-        }
-        if (overBudgetCount > 0) budgetAdherenceScore -= 10 * overBudgetCount;
+      for (const budget of budgets) {
+        const spent = categorySpending[budget.category] || 0;
+        if (spent > parseFloat(budget.monthlyLimit as unknown as string)) budgetAdherenceScore -= 10;
       }
 
       let categoryBalanceScore = 25;
-      const problematicCategories = ["Entertainment", "Shopping", "Subscription"];
-      for (const cat of problematicCategories) {
-        if (categorySpending[cat]) {
-          const percentage = (categorySpending[cat] / totalExpense) * 100;
-          if (percentage > 25) categoryBalanceScore -= 8;
-        }
+      for (const cat of ["Entertainment", "Shopping", "Subscription"]) {
+        if (categorySpending[cat] && (categorySpending[cat] / totalExpense) * 100 > 25) categoryBalanceScore -= 8;
       }
       categoryBalanceScore = Math.max(0, categoryBalanceScore);
 
@@ -411,23 +379,17 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
       else if (incomeExpenseRatio < 70) incomeExpenseScore = 20;
       else if (incomeExpenseRatio < 90) incomeExpenseScore = 10;
 
-      const healthScore = Math.round(
-        Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore)
-      );
+      const healthScore = Math.round(Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore));
 
-      // Generate AI advice
-      const advicePrompt = `Based on income of $${totalIncome.toFixed(2)}, expenses of $${totalExpense.toFixed(2)}, and savings rate of ${savingsRate.toFixed(1)}%, provide 2-3 sentences of financial advice.`;
       const adviceResponse = await openai.chat.completions.create({
         model: "gpt-5.1",
-        messages: [{ role: "user", content: advicePrompt }],
-        max_completion_tokens: 100,
+        messages: [{ role: "user", content: `Income $${totalIncome.toFixed(2)}, expenses $${totalExpense.toFixed(2)}, savings rate ${savingsRate.toFixed(1)}%, ${subSummary.activeSubscriptionCount} subscriptions costing $${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}/month. Provide 2-3 sentences of financial advice.` }],
+        max_completion_tokens: 120,
       });
       const aiAdvice = adviceResponse.choices[0]?.message?.content || "Maintain consistent spending habits and review your budget monthly.";
 
-      // Create PDF
       const doc = new PDFDocument({ bufferPages: true, margin: 50 });
       const chunks: Buffer[] = [];
-
       doc.on("data", (chunk) => chunks.push(chunk));
       doc.on("end", () => {
         const pdfBuffer = Buffer.concat(chunks);
@@ -436,12 +398,10 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
         res.send(pdfBuffer);
       });
 
-      // Title
       doc.fontSize(24).font("Helvetica-Bold").text("Monthly Financial Report", { align: "center" });
       doc.fontSize(12).font("Helvetica").text(`Generated: ${new Date().toLocaleDateString()}`, { align: "center" });
       doc.moveDown();
 
-      // Summary Section
       doc.fontSize(14).font("Helvetica-Bold").text("Financial Summary");
       doc.fontSize(11).font("Helvetica");
       doc.text(`Total Income: $${totalIncome.toFixed(2)}`);
@@ -451,36 +411,38 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
       doc.text(`Current Balance: $${totalBalance.toFixed(2)}`);
       doc.moveDown();
 
-      // Category Breakdown
       doc.fontSize(14).font("Helvetica-Bold").text("Spending by Category");
       doc.fontSize(10).font("Helvetica");
-      const sortedCategories = Object.entries(categorySpending).sort((a, b) => b[1] - a[1]);
-      sortedCategories.forEach(([category, amount]) => {
-        const percentage = totalExpense > 0 ? ((amount / totalExpense) * 100).toFixed(1) : "0.0";
-        doc.text(`• ${category}: $${amount.toFixed(2)} (${percentage}%)`);
+      Object.entries(categorySpending).sort((a, b) => b[1] - a[1]).forEach(([category, amount]) => {
+        const pct = totalExpense > 0 ? ((amount / totalExpense) * 100).toFixed(1) : "0.0";
+        doc.text(`• ${category}: $${amount.toFixed(2)} (${pct}%)`);
       });
       doc.moveDown();
 
-      // Financial Health Score
+      if (subs.length > 0) {
+        doc.fontSize(14).font("Helvetica-Bold").text("Active Subscriptions");
+        doc.fontSize(10).font("Helvetica");
+        subs.forEach(sub => {
+          doc.text(`• ${sub.merchantName}: $${parseFloat(sub.averageAmount as unknown as string).toFixed(2)}/${sub.cycle} (confidence: ${Math.round(sub.confidenceScore * 100)}%)`);
+        });
+        doc.text(`Total Monthly Subscription Spend: $${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}`);
+        doc.moveDown();
+      }
+
       doc.fontSize(14).font("Helvetica-Bold").text("Financial Health Score");
       doc.fontSize(12).font("Helvetica");
       doc.text(`Score: ${healthScore}/100`, { underline: true });
       doc.fontSize(10);
-      doc.text(`Savings Rate: ${savingsRateScore}/30 points`);
-      doc.text(`Budget Adherence: ${budgetAdherenceScore}/20 points`);
-      doc.text(`Category Balance: ${categoryBalanceScore}/25 points`);
-      doc.text(`Income/Expense Ratio: ${incomeExpenseScore}/25 points`);
+      doc.text(`Savings Rate: ${savingsRateScore}/30 pts  |  Budget Adherence: ${budgetAdherenceScore}/20 pts`);
+      doc.text(`Category Balance: ${categoryBalanceScore}/25 pts  |  Income/Expense: ${incomeExpenseScore}/25 pts`);
       doc.moveDown();
 
-      // AI Advice
-      doc.fontSize(14).font("Helvetica-Bold").text("Financial Advice");
+      doc.fontSize(14).font("Helvetica-Bold").text("AI Financial Advice");
       doc.fontSize(11).font("Helvetica");
       doc.text(aiAdvice, { align: "left", width: 400 });
       doc.moveDown();
 
-      // Footer
       doc.fontSize(9).fillColor("#999999").text("This report is confidential and for personal use only.", { align: "center" });
-
       doc.end();
     } catch (err) {
       console.error("Report Generation Error:", err);
@@ -488,11 +450,14 @@ You are a helpful AI Financial Advisor. Provide clear, concise, and helpful advi
     }
   });
 
-  // Basic seed function if requested (not heavily needed here but good to have)
   app.post('/api/seed', async (req, res) => {
-    // Hidden seed endpoint for demo purposes
-    res.json({ message: "To seed, create a user and add transactions manually through the UI" });
+    res.json({ message: "Create accounts and transactions through the UI to get started." });
   });
+
+  // ---- Nightly Cron Job (runs every 24h) ----
+  setInterval(() => {
+    runNightlyDetection().catch(console.error);
+  }, 24 * 60 * 60 * 1000);
 
   return httpServer;
 }

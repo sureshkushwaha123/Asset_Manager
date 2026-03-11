@@ -6,16 +6,14 @@ import { format } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { api } from "@shared/routes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, ArrowDownRight, ArrowUpRight, Search, FileX } from "lucide-react";
+import { Plus, ArrowDownRight, ArrowUpRight, FileX, Repeat } from "lucide-react";
 
-// The schema from backend with overrides
 const transactionSchema = z.object({
   accountId: z.coerce.number().min(1, "Account is required"),
   amount: z.coerce.number().min(0.01, "Amount must be positive"),
@@ -26,37 +24,41 @@ const transactionSchema = z.object({
 });
 type TransactionForm = z.infer<typeof transactionSchema>;
 
+type FilterType = 'ALL' | 'DEBIT' | 'CREDIT' | 'RECURRING';
+
 export default function Transactions() {
-  const [filter, setFilter] = useState<'ALL' | 'DEBIT' | 'CREDIT'>('ALL');
+  const [filter, setFilter] = useState<FilterType>('ALL');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  
+
   const { data: accounts } = useAccounts();
   const { data: transactionsData, isLoading } = useTransactions(
-    filter === 'ALL' ? undefined : { type: filter }
+    filter === 'RECURRING'
+      ? { recurring: true } as any
+      : filter === 'ALL'
+        ? undefined
+        : { type: filter }
   );
   const createTx = useCreateTransaction();
 
   const form = useForm<TransactionForm>({
     resolver: zodResolver(transactionSchema),
-    defaultValues: {
-      accountId: 0,
-      type: 'DEBIT',
-      category: '',
-      description: '',
-      amount: undefined,
-    }
+    defaultValues: { accountId: 0, type: 'DEBIT', category: '', description: '', amount: undefined },
   });
 
   const onSubmit = (data: TransactionForm) => {
     createTx.mutate(data, {
-      onSuccess: () => {
-        setIsDialogOpen(false);
-        form.reset();
-      }
+      onSuccess: () => { setIsDialogOpen(false); form.reset(); }
     });
   };
 
   const transactions = transactionsData?.items || [];
+
+  const FILTERS: { key: FilterType; label: string }[] = [
+    { key: 'ALL', label: 'All' },
+    { key: 'DEBIT', label: 'Expenses' },
+    { key: 'CREDIT', label: 'Income' },
+    { key: 'RECURRING', label: 'Recurring' },
+  ];
 
   return (
     <AppLayout>
@@ -66,7 +68,7 @@ export default function Transactions() {
             <h1 className="text-4xl font-display font-bold text-white mb-2">Transactions</h1>
             <p className="text-muted-foreground">View and manage your recent activity.</p>
           </div>
-          
+
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="rounded-xl px-6 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25">
@@ -113,30 +115,20 @@ export default function Transactions() {
                   </div>
                   <div className="space-y-2">
                     <Label className="text-white/80">Amount ($)</Label>
-                    <Input 
-                      type="number" step="0.01" 
-                      {...form.register("amount")}
-                      className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="0.00"
-                    />
+                    <Input type="number" step="0.01" {...form.register("amount")} className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="0.00" />
                     {form.formState.errors.amount && <p className="text-sm text-destructive">{form.formState.errors.amount.message}</p>}
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-white/80">Category</Label>
-                  <Input 
-                    {...form.register("category")}
-                    className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="e.g. Groceries, Salary"
-                  />
+                  <Input {...form.register("category")} className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="e.g. Groceries, Salary" />
                   {form.formState.errors.category && <p className="text-sm text-destructive">{form.formState.errors.category.message}</p>}
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-white/80">Description</Label>
-                  <Input 
-                    {...form.register("description")}
-                    className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="Details about this transaction"
-                  />
+                  <Input {...form.register("description")} className="bg-black/50 border-white/10 text-white h-12 rounded-xl" placeholder="Details about this transaction" />
                   {form.formState.errors.description && <p className="text-sm text-destructive">{form.formState.errors.description.message}</p>}
                 </div>
 
@@ -150,79 +142,77 @@ export default function Transactions() {
 
         {/* Filters */}
         <div className="flex bg-card/50 p-1 rounded-xl w-fit border border-white/5 shadow-inner">
-          {['ALL', 'DEBIT', 'CREDIT'].map((t) => (
+          {FILTERS.map((f) => (
             <button
-              key={t}
-              onClick={() => setFilter(t as any)}
-              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
-                filter === t ? "bg-primary text-primary-foreground shadow-md" : "text-muted-foreground hover:text-white"
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+                filter === f.key ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-white'
               }`}
             >
-              {t === 'ALL' ? 'All' : t === 'DEBIT' ? 'Expenses' : 'Income'}
+              {f.key === 'RECURRING' && <Repeat className="w-3.5 h-3.5" />}
+              {f.label}
             </button>
           ))}
         </div>
 
-        {/* List */}
-        <Card className="glass-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/5 bg-white/5">
-                  <th className="px-6 py-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">Transaction</th>
-                  <th className="px-6 py-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">Category</th>
-                  <th className="px-6 py-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-4 text-sm font-medium text-muted-foreground uppercase tracking-wider text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-muted-foreground">Loading transactions...</td>
-                  </tr>
-                ) : transactions.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center justify-center">
-                        <FileX className="w-12 h-12 mb-3 opacity-20" />
-                        <p>No transactions found.</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  transactions.map((tx) => (
-                    <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors group">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            tx.type === 'CREDIT' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-white/5 text-white'
-                          }`}>
-                            {tx.type === 'CREDIT' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-                          </div>
-                          <div>
-                            <p className="text-white font-medium">{tx.description}</p>
-                            <p className="text-xs text-muted-foreground">Account #{tx.accountId}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-white/10 text-white/80 border border-white/5">
-                          {tx.category}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-muted-foreground text-sm">
-                        {format(new Date(tx.date), 'MMM dd, yyyy')}
-                      </td>
-                      <td className={`px-6 py-4 text-right font-medium ${tx.type === 'CREDIT' ? 'text-emerald-500' : 'text-white'}`}>
-                        {tx.type === 'CREDIT' ? '+' : '-'}${parseFloat(tx.amount).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        {/* Transactions List */}
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map(i => <div key={i} className="h-16 rounded-2xl bg-card/50 animate-pulse border border-white/5" />)}
           </div>
-        </Card>
+        ) : transactions.length === 0 ? (
+          <div className="flex flex-col items-center py-24">
+            <FileX className="w-16 h-16 text-white/10 mb-4" />
+            <h3 className="text-xl font-medium text-white mb-2">No Transactions</h3>
+            <p className="text-muted-foreground">
+              {filter === 'RECURRING' ? 'No recurring transactions detected yet.' : 'Add your first transaction to get started.'}
+            </p>
+          </div>
+        ) : (
+          <Card className="glass-card">
+            <CardContent className="p-0">
+              <div className="divide-y divide-white/5">
+                {transactions.map(tx => (
+                  <div
+                    key={tx.id}
+                    data-testid={`transaction-row-${tx.id}`}
+                    className="flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tx.type === 'CREDIT' ? 'bg-emerald-500/10' : 'bg-destructive/10'}`}>
+                        {tx.type === 'CREDIT'
+                          ? <ArrowUpRight className="w-5 h-5 text-emerald-500" />
+                          : <ArrowDownRight className="w-5 h-5 text-destructive" />
+                        }
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-white">{tx.description}</p>
+                          {tx.isRecurring && (
+                            <span
+                              data-testid={`badge-recurring-${tx.id}`}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30"
+                            >
+                              <Repeat className="w-3 h-3" />
+                              {tx.recurringCycle || 'recurring'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {tx.category} · {format(new Date(tx.date), 'MMM dd, yyyy')}
+                        </p>
+                      </div>
+                    </div>
+                    <p className={`text-sm font-semibold ${tx.type === 'CREDIT' ? 'text-emerald-500' : 'text-destructive'}`}>
+                      {tx.type === 'CREDIT' ? '+' : '-'}${parseFloat(tx.amount).toFixed(2)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AppLayout>
   );
