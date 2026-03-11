@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, ArrowDownRight, ArrowUpRight, FileX, Repeat } from "lucide-react";
+import { Plus, ArrowDownRight, ArrowUpRight, FileX, Repeat, Landmark } from "lucide-react";
 
 const transactionSchema = z.object({
   accountId: z.coerce.number().min(1, "Account is required"),
@@ -52,6 +52,7 @@ export default function Transactions() {
   };
 
   const transactions = transactionsData?.items || [];
+  const accountMap = Object.fromEntries((accounts || []).map(a => [a.id, a.accountName]));
 
   const FILTERS: { key: FilterType; label: string }[] = [
     { key: 'ALL', label: 'All' },
@@ -199,9 +200,23 @@ export default function Transactions() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {tx.category} · {format(new Date(tx.date), 'MMM dd, yyyy')}
-                        </p>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 flex-wrap">
+                          <span>{tx.category}</span>
+                          <span className="text-white/20">·</span>
+                          <span>{format(new Date(tx.date), 'MMM dd, yyyy')}</span>
+                          {accountMap[tx.accountId] && (
+                            <>
+                              <span className="text-white/20">·</span>
+                              <span
+                                data-testid={`tx-account-${tx.id}`}
+                                className="flex items-center gap-1 text-primary/80"
+                              >
+                                <Landmark className="w-3 h-3" />
+                                {accountMap[tx.accountId]}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <p className={`text-sm font-semibold ${tx.type === 'CREDIT' ? 'text-emerald-500' : 'text-destructive'}`}>
