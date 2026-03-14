@@ -1,12 +1,13 @@
 import { db } from "./db";
 import {
-  users, accounts, transactions, budgets, subscriptions, notifications,
+  users, accounts, transactions, budgets, subscriptions, notifications, userActivity,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Transaction, type InsertTransaction,
   type Budget, type InsertBudget,
   type Subscription, type InsertSubscription,
   type Notification, type InsertNotification,
+  type UserActivity,
 } from "@shared/schema";
 import { eq, and, desc, sql, lte, gte } from "drizzle-orm";
 
@@ -14,6 +15,14 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserProfile(id: number, data: { fullName?: string; avatarUrl?: string; defaultCurrency?: string }): Promise<User>;
+  updateUserPreferences(id: number, data: { savingsTargetPercent?: number; riskAppetite?: string }): Promise<User>;
+  updateUserNotifications(id: number, data: { notificationBudget?: boolean; notificationSubscription?: boolean; notificationAI?: boolean }): Promise<User>;
+  updateUserPassword(id: number, hashedPassword: string): Promise<void>;
+  updateLastLogin(id: number): Promise<void>;
+  softDeleteUser(id: number): Promise<void>;
+  logActivity(userId: number, action: string, ipAddress?: string, device?: string): Promise<void>;
+  getUserActivity(userId: number): Promise<UserActivity[]>;
 
   getAccounts(userId: number): Promise<Account[]>;
   createAccount(account: InsertAccount): Promise<Account>;
@@ -51,6 +60,41 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUserProfile(id: number, data: { fullName?: string; avatarUrl?: string; defaultCurrency?: string }): Promise<User> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  async updateUserPreferences(id: number, data: { savingsTargetPercent?: number; riskAppetite?: string }): Promise<User> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  async updateUserNotifications(id: number, data: { notificationBudget?: boolean; notificationSubscription?: boolean; notificationAI?: boolean }): Promise<User> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return user;
+  }
+
+  async updateUserPassword(id: number, hashedPassword: string): Promise<void> {
+    await db.update(users).set({ password: hashedPassword }).where(eq(users.id, id));
+  }
+
+  async updateLastLogin(id: number): Promise<void> {
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
+  }
+
+  async softDeleteUser(id: number): Promise<void> {
+    await db.update(users).set({ isDeleted: true }).where(eq(users.id, id));
+  }
+
+  async logActivity(userId: number, action: string, ipAddress?: string, device?: string): Promise<void> {
+    await db.insert(userActivity).values({ userId, action, ipAddress, device });
+  }
+
+  async getUserActivity(userId: number): Promise<UserActivity[]> {
+    return await db.select().from(userActivity).where(eq(userActivity.userId, userId)).orderBy(desc(userActivity.createdAt)).limit(20);
   }
 
   async getAccounts(userId: number): Promise<Account[]> {

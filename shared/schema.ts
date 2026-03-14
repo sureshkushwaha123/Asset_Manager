@@ -8,6 +8,25 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   role: text("role").notNull().default("ROLE_USER"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  fullName: text("full_name"),
+  avatarUrl: text("avatar_url"),
+  lastLoginAt: timestamp("last_login_at"),
+  savingsTargetPercent: integer("savings_target_percent").default(20).notNull(),
+  riskAppetite: text("risk_appetite").default("MEDIUM").notNull(),
+  defaultCurrency: text("default_currency").default("INR").notNull(),
+  notificationBudget: boolean("notification_budget").default(true).notNull(),
+  notificationSubscription: boolean("notification_subscription").default(true).notNull(),
+  notificationAI: boolean("notification_ai").default(true).notNull(),
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+});
+
+export const userActivity = pgTable("user_activity", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  action: text("action").notNull(),
+  device: text("device"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const accounts = pgTable("accounts", {
@@ -68,6 +87,7 @@ export const budgets = pgTable("budgets", {
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({ username: true, password: true });
+export const insertUserActivitySchema = createInsertSchema(userActivity).omit({ id: true, createdAt: true });
 export const insertAccountSchema = createInsertSchema(accounts).omit({ id: true, createdAt: true });
 export const insertTransactionSchema = createInsertSchema(transactions).omit({ id: true });
 export const insertBudgetSchema = createInsertSchema(budgets).omit({ id: true });
@@ -77,6 +97,9 @@ export const insertNotificationSchema = createInsertSchema(notifications).omit({
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type UserActivity = typeof userActivity.$inferSelect;
+export type InsertUserActivity = z.infer<typeof insertUserActivitySchema>;
 
 export type Account = typeof accounts.$inferSelect;
 export type InsertAccount = z.infer<typeof insertAccountSchema>;

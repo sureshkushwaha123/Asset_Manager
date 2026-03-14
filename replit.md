@@ -1,7 +1,7 @@
 # VaultAI — AI-Powered Personal Finance Manager
 
 ## Overview
-A full-stack personal finance management application with AI-driven insights, automatic subscription detection, and financial health scoring.
+A full-stack personal finance management application with AI-driven insights, automatic subscription detection, financial health scoring, and a full User Profile & Settings system.
 
 ## Tech Stack
 - **Frontend**: React + Vite, TanStack Query, Shadcn UI, Recharts, Wouter, Tailwind CSS

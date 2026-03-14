@@ -1,0 +1,248 @@
+Enhance the existing AI Powered Personal Finance Manager application by implementing a complete User Profile & Account Settings Module.
+
+This feature must integrate cleanly with the current architecture:
+
+Backend:
+Node.js + Express + JWT Auth + PostgreSQL (Drizzle ORM) + Redis
+
+Frontend:
+React + Tailwind + Recharts
+
+AI:
+OpenAI based financial advisor and categorization services
+
+Do NOT break existing APIs or UI flows.
+
+------------------------------------------------
+DATABASE CHANGES
+------------------------------------------------
+
+Update users table:
+
+Add columns:
+
+avatarUrl TEXT NULL
+lastLoginAt TIMESTAMP NULL
+savingsTargetPercent INT DEFAULT 20
+riskAppetite VARCHAR(20) DEFAULT 'MEDIUM'
+defaultCurrency VARCHAR(10) DEFAULT 'INR'
+notificationBudget BOOLEAN DEFAULT true
+notificationSubscription BOOLEAN DEFAULT true
+notificationAI BOOLEAN DEFAULT true
+isDeleted BOOLEAN DEFAULT false
+
+------------------------------------------------
+BACKEND IMPLEMENTATION
+------------------------------------------------
+
+Create new controller: userController
+Create service: userService
+
+1. Get User Profile
+
+GET /user/profile
+
+Return:
+
+{
+ id,
+ name,
+ email,
+ role,
+ avatarUrl,
+ createdAt,
+ lastLoginAt,
+ savingsTargetPercent,
+ riskAppetite,
+ defaultCurrency,
+ notificationSettings
+}
+
+2. Update Profile
+
+PUT /user/profile
+
+Allow update:
+
+- name
+- avatarUrl
+- defaultCurrency
+
+Validate inputs.
+
+3. Change Password
+
+PUT /user/change-password
+
+Body:
+
+{
+ currentPassword,
+ newPassword
+}
+
+Verify BCrypt match.
+
+4. Update Financial Preferences
+
+PUT /user/preferences
+
+Fields:
+
+- savingsTargetPercent (0-100)
+- riskAppetite (LOW / MEDIUM / HIGH)
+
+5. Notification Preferences
+
+PUT /user/notifications
+
+Toggle:
+
+- budget alerts
+- subscription alerts
+- AI advice alerts
+
+6. Financial Snapshot API
+
+GET /user/financial-summary
+
+Return:
+
+{
+ currentBalance,
+ totalMonthlySpending,
+ activeSubscriptions,
+ financialHealthScore
+}
+
+Reuse existing services (transactions / subscriptions / AI health score).
+
+Cache response in Redis:
+
+financialSummary:userId
+TTL = 5 minutes
+
+Invalidate cache on:
+
+- new transaction
+- subscription change
+- health score recompute
+
+7. Activity Log (Optional but recommended)
+
+Create table:
+
+user_activity
+
+Fields:
+
+id
+userId
+action
+device
+ipAddress
+createdAt
+
+Log:
+
+- login
+- password change
+- profile update
+
+API:
+
+GET /user/activity
+
+------------------------------------------------
+PRIVACY FEATURES
+------------------------------------------------
+
+Soft Delete Account:
+
+PUT /user/delete-account
+
+Set:
+
+isDeleted = true
+
+User should be logged out.
+
+------------------------------------------------
+FRONTEND IMPLEMENTATION
+------------------------------------------------
+
+When clicking the user card in the dashboard header:
+
+Open a RIGHT SIDE DRAWER component.
+
+Create tabs inside drawer:
+
+1. Profile
+- avatar upload preview
+- editable name
+- email readonly
+- role badge
+- joined date
+
+2. Security
+- change password form
+- show last login timestamp
+
+3. Financial Preferences
+- savings target slider
+- risk appetite dropdown
+- currency selector
+
+4. Financial Snapshot
+- card UI showing:
+  current balance
+  monthly spending
+  active subscriptions
+  financial health score
+
+5. Notifications
+- toggle switches
+
+6. Privacy
+- export transactions CSV button
+- delete account button (confirmation modal)
+
+------------------------------------------------
+UX REQUIREMENTS
+------------------------------------------------
+
+- Drawer should be animated (slide from right)
+- Show loading skeleton while fetching profile
+- Show success toast after updates
+- Form validation messages
+- Responsive design
+
+------------------------------------------------
+STATE MANAGEMENT
+------------------------------------------------
+
+Create profileService.js
+
+Store profile data in React context.
+
+Refetch profile after updates.
+
+------------------------------------------------
+TESTING
+------------------------------------------------
+
+Add backend tests:
+
+- profile update success
+- password change validation
+- financial summary caching
+
+------------------------------------------------
+OUTPUT
+------------------------------------------------
+
+Update backend routes
+Update database migration
+Update React header component
+Create ProfileDrawer component
+Ensure modular clean code.

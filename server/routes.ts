@@ -53,7 +53,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const validPassword = await bcrypt.compare(input.password, user.password);
       if (!validPassword) return res.status(401).json({ message: "Invalid credentials" });
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
-      res.status(200).json({ user, token });
+      await storage.updateLastLogin(user.id);
+      await storage.logActivity(user.id, "Login", req.ip, req.headers["user-agent"]);
+      const updatedUser = await storage.getUser(user.id);
+      res.status(200).json({ user: updatedUser, token });
     } catch {
       res.status(500).json({ message: "Internal server error" });
     }
@@ -63,6 +66,171 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = await storage.getUser(req.user.id);
     if (!user) return res.status(401).json({ message: "User not found" });
     res.json(user);
+  });
+
+  // ---- User Profile Routes ----
+
+  app.get('/api/user/profile', authenticateToken, async (req: any, res) => {
+    const user = await storage.getUser(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const { password, ...safeUser } = user;
+    res.json(safeUser);
+  });
+
+  app.put('/api/user/profile', authenticateToken, async (req: any, res) => {
+    try {
+      const schema = z.object({
+        fullName: z.string().min(1).max(100).optional(),
+        avatarUrl: z.string().url().optional().or(z.literal("")),
+        defaultCurrency: z.enum(["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "SGD"]).optional(),
+      });
+      const data = schema.parse(req.body);
+      const user = await storage.updateUserProfile(req.user.id, data);
+      await storage.logActivity(req.user.id, "Profile updated", req.ip, req.headers["user-agent"]);
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  app.put('/api/user/change-password', authenticateToken, async (req: any, res) => {
+    try {
+      const schema = z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(6, "New password must be at least 6 characters"),
+      });
+      const { currentPassword, newPassword } = schema.parse(req.body);
+      const user = await storage.getUser(req.user.id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const valid = await bcrypt.compare(currentPassword, user.password);
+      if (!valid) return res.status(400).json({ message: "Current password is incorrect" });
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await storage.updateUserPassword(req.user.id, hashed);
+      await storage.logActivity(req.user.id, "Password changed", req.ip, req.headers["user-agent"]);
+      res.json({ message: "Password updated successfully" });
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
+  app.put('/api/user/preferences', authenticateToken, async (req: any, res) => {
+    try {
+      const schema = z.object({
+        savingsTargetPercent: z.number().min(0).max(100).optional(),
+        riskAppetite: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+      });
+      const data = schema.parse(req.body);
+      const user = await storage.updateUserPreferences(req.user.id, data);
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Failed to update preferences" });
+    }
+  });
+
+  app.put('/api/user/notifications', authenticateToken, async (req: any, res) => {
+    try {
+      const schema = z.object({
+        notificationBudget: z.boolean().optional(),
+        notificationSubscription: z.boolean().optional(),
+        notificationAI: z.boolean().optional(),
+      });
+      const data = schema.parse(req.body);
+      const user = await storage.updateUserNotifications(req.user.id, data);
+      const { password, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      res.status(500).json({ message: "Failed to update notifications" });
+    }
+  });
+
+  app.get('/api/user/financial-summary', authenticateToken, async (req: any, res) => {
+    try {
+      const uid = req.user.id;
+      const [accsResult, txResult, subSummary] = await Promise.all([
+        storage.getAccounts(uid),
+        storage.getTransactions(uid, { limit: 1000 }),
+        storage.getSubscriptionSummary(uid),
+      ]);
+      const currentBalance = accsResult.reduce((s, a) => s + parseFloat(a.balance as unknown as string), 0);
+      const txList = txResult.items;
+      const totalMonthlySpending = txList.filter(t => t.type === "DEBIT").reduce((s, t) => s + parseFloat(t.amount as unknown as string), 0);
+      const totalIncome = txList.filter(t => t.type === "CREDIT").reduce((s, t) => s + parseFloat(t.amount as unknown as string), 0);
+      const totalExpense = totalMonthlySpending;
+      const savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+      let savingsRateScore = 0;
+      if (savingsRate > 30) savingsRateScore = 30;
+      else if (savingsRate > 20) savingsRateScore = 20;
+      else if (savingsRate > 10) savingsRateScore = 10;
+      const budgets = await storage.getBudgets(uid);
+      let budgetAdherenceScore = 20;
+      const categorySpending = txList.filter(t => t.type === "DEBIT").reduce((acc, t) => {
+        acc[t.category] = (acc[t.category] || 0) + parseFloat(t.amount as unknown as string); return acc;
+      }, {} as Record<string, number>);
+      for (const b of budgets) {
+        if ((categorySpending[b.category] || 0) > parseFloat(b.monthlyLimit as unknown as string)) budgetAdherenceScore -= 10;
+      }
+      let categoryBalanceScore = 25;
+      for (const cat of ["Entertainment", "Shopping", "Subscription"]) {
+        if (categorySpending[cat] && totalExpense > 0 && (categorySpending[cat] / totalExpense) * 100 > 25) categoryBalanceScore -= 8;
+      }
+      categoryBalanceScore = Math.max(0, categoryBalanceScore);
+      const incomeExpenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 100;
+      let incomeExpenseScore = 0;
+      if (incomeExpenseRatio < 50) incomeExpenseScore = 25;
+      else if (incomeExpenseRatio < 70) incomeExpenseScore = 20;
+      else if (incomeExpenseRatio < 90) incomeExpenseScore = 10;
+      const financialHealthScore = Math.round(Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore));
+      res.json({ currentBalance, totalMonthlySpending, activeSubscriptions: subSummary.activeSubscriptionCount, financialHealthScore });
+    } catch (err) {
+      console.error("Financial summary error:", err);
+      res.status(500).json({ message: "Failed to get financial summary" });
+    }
+  });
+
+  app.get('/api/user/activity', authenticateToken, async (req: any, res) => {
+    const activity = await storage.getUserActivity(req.user.id);
+    res.json(activity);
+  });
+
+  app.get('/api/user/export-csv', authenticateToken, async (req: any, res) => {
+    try {
+      const accounts = await storage.getAccounts(req.user.id);
+      const accountMap = Object.fromEntries(accounts.map(a => [a.id, a.accountName]));
+      const { items } = await storage.getTransactions(req.user.id, { limit: 10000 });
+      const csvRows = [
+        ["Date", "Account", "Description", "Category", "Type", "Amount", "Recurring"].join(","),
+        ...items.map(t => [
+          new Date(t.date).toLocaleDateString(),
+          accountMap[t.accountId] || "",
+          `"${(t.description || "").replace(/"/g, '""')}"`,
+          t.category,
+          t.type,
+          parseFloat(t.amount as unknown as string).toFixed(2),
+          t.isRecurring ? "Yes" : "No",
+        ].join(","))
+      ];
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="VaultAI_Transactions_${new Date().toISOString().split("T")[0]}.csv"`);
+      res.send(csvRows.join("\n"));
+    } catch {
+      res.status(500).json({ message: "Failed to export CSV" });
+    }
+  });
+
+  app.put('/api/user/delete-account', authenticateToken, async (req: any, res) => {
+    try {
+      await storage.logActivity(req.user.id, "Account deleted", req.ip, req.headers["user-agent"]);
+      await storage.softDeleteUser(req.user.id);
+      res.json({ message: "Account has been deactivated" });
+    } catch {
+      res.status(500).json({ message: "Failed to delete account" });
+    }
   });
 
   // ---- Accounts Routes ----
