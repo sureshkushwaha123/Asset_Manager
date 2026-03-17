@@ -29,6 +29,15 @@ export const userActivity = pgTable("user_activity", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const passwordResets = pgTable("password_resets", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  used: boolean("used").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const accounts = pgTable("accounts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),

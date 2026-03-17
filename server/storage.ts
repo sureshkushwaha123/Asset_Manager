@@ -1,6 +1,6 @@
 import { db } from "./db";
 import {
-  users, accounts, transactions, budgets, subscriptions, notifications, userActivity,
+  users, accounts, transactions, budgets, subscriptions, notifications, userActivity, passwordResets,
   type User, type InsertUser,
   type Account, type InsertAccount,
   type Transaction, type InsertTransaction,
@@ -9,7 +9,7 @@ import {
   type Notification, type InsertNotification,
   type UserActivity,
 } from "@shared/schema";
-import { eq, and, desc, sql, lte, gte } from "drizzle-orm";
+import { eq, and, desc, sql, lte, gte, gt } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;

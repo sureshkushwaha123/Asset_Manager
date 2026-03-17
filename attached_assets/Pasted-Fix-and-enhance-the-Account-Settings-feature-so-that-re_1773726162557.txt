@@ -1,0 +1,100 @@
+Fix and enhance the Account & Settings feature so that real user data is fetched from backend and displayed.
+
+IMPORTANT UI CHANGE:
+
+The Profile / Account Settings section should open as a CENTERED POPUP MODAL when the user clicks the user card.
+
+It should NOT slide from the right side anymore.
+
+The popup should:
+
+- appear centered
+- have dark backdrop overlay
+- be closable via:
+   - close icon
+   - clicking outside
+   - ESC key
+- be responsive
+- have smooth scale/fade animation
+
+--------------------------------
+BACKEND REQUIREMENTS
+--------------------------------
+
+Ensure GET /user/profile returns:
+
+- name
+- email
+- username
+- role
+- avatarUrl
+- createdAt
+- lastLoginAt
+- defaultCurrency
+- savingsTargetPercent
+- riskAppetite
+
+Ensure JWT middleware protects this route.
+
+Ensure GET /user/financial-summary returns:
+
+- currentBalance
+- totalMonthlySpending
+- activeSubscriptions
+- financialHealthScore
+
+--------------------------------
+FRONTEND IMPLEMENTATION
+--------------------------------
+
+When user clicks the user card:
+
+- open ProfileModal component (not drawer)
+
+When modal opens:
+
+- call GET /user/profile
+- call GET /user/financial-summary
+
+Populate fields:
+
+Profile Tab
+- full name (editable)
+- username (readonly)
+- avatar preview
+- joined date (formatted)
+- default currency
+- savings target slider
+- risk appetite dropdown
+
+Summary Tab
+- current balance
+- monthly spending
+- active subscriptions
+- financial health score
+
+Add loading skeleton while fetching profile.
+
+Format joined date using locale date format.
+
+After PUT /user/profile success:
+
+- refetch profile API
+- update UI state immediately
+- show success toast
+
+Ensure Authorization header includes JWT token.
+
+Handle API failures with error toast.
+
+Do NOT use any hardcoded placeholder values.
+
+--------------------------------
+UX IMPROVEMENTS
+--------------------------------
+
+- modal max width ~700px
+- scroll inside modal if content large
+- sticky tab header
+- subtle backdrop blur
+- smooth open/close animation
