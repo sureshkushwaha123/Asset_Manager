@@ -152,7 +152,7 @@ export default function Accounts() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Starting Balance ($)</Label>
+                  <Label className="text-white/80">Starting Balance ({currency.code})</Label>
                   <Input
                     data-testid="input-account-balance"
                     type="number"
@@ -185,7 +185,7 @@ export default function Accounts() {
             <div>
               <p className="text-sm text-muted-foreground mb-1">Total Balance Across All Accounts</p>
               <p data-testid="text-total-balance" className="text-4xl font-display font-bold text-white">
-                ${totalBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {currency.format(totalBalance)}
               </p>
             </div>
             <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center">

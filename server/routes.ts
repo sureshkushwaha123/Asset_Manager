@@ -463,17 +463,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const subSummary = await storage.getSubscriptionSummary(req.user.id);
       const upcomingSubs = await storage.getUpcomingSubscriptions(req.user.id, 7);
       const subs = await storage.getSubscriptions(req.user.id);
+      const userProfile = await storage.getUser(req.user.id);
 
       const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance as unknown as string), 0);
 
-      const subNames = subs.map(s => `${s.merchantName} ($${parseFloat(s.averageAmount as unknown as string).toFixed(2)}/${s.cycle})`).join(", ");
+      const subNames = subs.map(s => `${s.merchantName} (${parseFloat(s.averageAmount as unknown as string).toFixed(2)} ${s.cycle})`).join(", ");
       const upcomingNames = upcomingSubs.map(s => `${s.merchantName} on ${new Date(s.nextExpectedDate).toLocaleDateString()}`).join(", ");
 
-      const contextStr = `User Financial Context:
-Total Balance: $${totalBalance.toFixed(2)}
+      const contextStr = `User Financial Context (currency: ${userProfile?.defaultCurrency || "USD"}):
+Total Balance: ${totalBalance.toFixed(2)}
 Spending by Category: ${JSON.stringify(summary)}
 Active Subscriptions (${subSummary.activeSubscriptionCount}): ${subNames || "None"}
-Monthly Subscription Spend: $${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}
+Monthly Subscription Spend: ${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}
 Upcoming Auto-Debits (next 7 days): ${upcomingNames || "None"}
 
 You are a helpful AI Financial Advisor. Provide clear, actionable advice. Reference subscriptions when relevant.`;
@@ -543,7 +544,7 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
       const topCategory = Object.entries(categorySpending).sort((a, b) => b[1] - a[1])[0];
       if (topCategory) insights.push(`You spend ${((topCategory[1] / totalExpense) * 100).toFixed(0)}% on ${topCategory[0]}`);
       insights.push(`Your savings rate is ${savingsRate.toFixed(1)}%`);
-      if (totalExpense > 0) insights.push(`Monthly expenses: $${totalExpense.toFixed(2)}`);
+      if (totalExpense > 0) insights.push(`Monthly expenses: ${totalExpense.toFixed(2)}`);
 
       const recommendations: string[] = [];
       if (savingsRate < 20) recommendations.push("Try to increase your savings rate to 20% or more");
@@ -578,6 +579,15 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
       const accounts = await storage.getAccounts(req.user.id);
       const subSummary = await storage.getSubscriptionSummary(req.user.id);
       const subs = await storage.getSubscriptions(req.user.id);
+
+      const userProfile = await storage.getUser(req.user.id);
+      const currencyCode = userProfile?.defaultCurrency || "USD";
+      const currencyLocaleMap: Record<string, string> = {
+        INR: "en-IN", USD: "en-US", EUR: "de-DE", GBP: "en-GB",
+        JPY: "ja-JP", AUD: "en-AU", CAD: "en-CA", SGD: "en-SG",
+      };
+      const fmtCurrency = (amount: number) =>
+        currencyCode + " " + amount.toLocaleString(currencyLocaleMap[currencyCode] || "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
       const totalIncome = txList.filter(t => t.type === "CREDIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
       const totalExpense = txList.filter(t => t.type === "DEBIT").reduce((sum, t) => sum + parseFloat(t.amount as unknown as string), 0);
@@ -616,7 +626,7 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
 
       const adviceResponse = await openai.chat.completions.create({
         model: "gpt-5.1",
-        messages: [{ role: "user", content: `Income $${totalIncome.toFixed(2)}, expenses $${totalExpense.toFixed(2)}, savings rate ${savingsRate.toFixed(1)}%, ${subSummary.activeSubscriptionCount} subscriptions costing $${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}/month. Provide 2-3 sentences of financial advice.` }],
+        messages: [{ role: "user", content: `Income ${fmtCurrency(totalIncome)}, expenses ${fmtCurrency(totalExpense)}, savings rate ${savingsRate.toFixed(1)}%, ${subSummary.activeSubscriptionCount} subscriptions costing ${fmtCurrency(subSummary.totalMonthlySubscriptionSpend)}/month. Provide 2-3 sentences of financial advice.` }],
         max_completion_tokens: 120,
       });
       const aiAdvice = adviceResponse.choices[0]?.message?.content || "Maintain consistent spending habits and review your budget monthly.";
@@ -755,12 +765,12 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
 
       // ── Summary KPI cards row ─────────────────────────────────────────────
       const kpiCards = [
-        { label: "Total Balance",   value: `$${totalBalance.toFixed(2)}`,             color: PRIMARY  },
-        { label: "Total Income",    value: `$${totalIncome.toFixed(2)}`,              color: "#48BB78" },
-        { label: "Total Expenses",  value: `$${totalExpense.toFixed(2)}`,             color: "#FC8181" },
-        { label: "Net Savings",     value: `$${(totalIncome - totalExpense).toFixed(2)}`, color: "#63B3ED" },
-        { label: "Savings Rate",    value: `${savingsRate.toFixed(1)}%`,              color: "#F6AD55" },
-        { label: "Health Score",    value: `${healthScore}/100`,                      color: "#9F7AEA" },
+        { label: "Total Balance",   value: fmtCurrency(totalBalance),                     color: PRIMARY  },
+        { label: "Total Income",    value: fmtCurrency(totalIncome),                      color: "#48BB78" },
+        { label: "Total Expenses",  value: fmtCurrency(totalExpense),                     color: "#FC8181" },
+        { label: "Net Savings",     value: fmtCurrency(totalIncome - totalExpense),        color: "#63B3ED" },
+        { label: "Savings Rate",    value: `${savingsRate.toFixed(1)}%`,                  color: "#F6AD55" },
+        { label: "Health Score",    value: `${healthScore}/100`,                          color: "#9F7AEA" },
       ];
       const cardW = CONTENT_WIDTH / 3;
       const cardH = 52;
@@ -794,10 +804,10 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
       const accountRows = accounts.map(acc => [
         acc.accountName,
         acc.accountType,
-        `$${parseFloat(acc.balance as unknown as string).toFixed(2)}`,
+        fmtCurrency(parseFloat(acc.balance as unknown as string)),
         acc.createdAt ? new Date(acc.createdAt).toLocaleDateString() : "—",
       ]);
-      accountRows.push(["", "TOTAL", `$${totalBalance.toFixed(2)}`, ""]);
+      accountRows.push(["", "TOTAL", fmtCurrency(totalBalance), ""]);
       drawTable(
         [
           { label: "Account Name", width: 170 },
@@ -821,7 +831,7 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
         accountMap[tx.accountId] || "—",
         tx.category,
         tx.type === "CREDIT" ? "Income" : "Expense",
-        (tx.type === "CREDIT" ? "+" : "-") + "$" + parseFloat(tx.amount as unknown as string).toFixed(2),
+        (tx.type === "CREDIT" ? "+" : "-") + fmtCurrency(parseFloat(tx.amount as unknown as string)),
         tx.isRecurring ? "Yes" : "No",
       ]);
       drawTable(
@@ -853,9 +863,9 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
         .map(([cat, amount]) => {
           const pct = totalExpense > 0 ? ((amount / totalExpense) * 100) : 0;
           const bar = "█".repeat(Math.round(pct / 5));
-          return [cat, `$${amount.toFixed(2)}`, `${pct.toFixed(1)}%`, bar];
+          return [cat, fmtCurrency(amount), `${pct.toFixed(1)}%`, bar];
         });
-      const catTotalRow = ["TOTAL EXPENSES", `$${totalExpense.toFixed(2)}`, "100%", ""];
+      const catTotalRow = ["TOTAL EXPENSES", fmtCurrency(totalExpense), "100%", ""];
       catRows.push(catTotalRow);
       drawTable(
         [
@@ -879,7 +889,7 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
           const limit = parseFloat(b.monthlyLimit as unknown as string);
           const pct = limit > 0 ? ((spent / limit) * 100).toFixed(1) : "0.0";
           const status = spent > limit ? "OVER BUDGET" : spent >= limit * 0.8 ? "NEAR LIMIT" : "ON TRACK";
-          return [b.category, `$${limit.toFixed(2)}`, `$${spent.toFixed(2)}`, `${pct}%`, status];
+          return [b.category, fmtCurrency(limit), fmtCurrency(spent), `${pct}%`, status];
         });
         drawTable(
           [
@@ -903,11 +913,11 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
         const subRows = subs.map(s => [
           s.merchantName,
           s.cycle.charAt(0).toUpperCase() + s.cycle.slice(1),
-          `$${parseFloat(s.averageAmount as unknown as string).toFixed(2)}`,
+          fmtCurrency(parseFloat(s.averageAmount as unknown as string)),
           new Date(s.nextExpectedDate).toLocaleDateString(),
           `${Math.round(s.confidenceScore * 100)}%`,
         ]);
-        const subTotalRow = [`${subs.length} active subscription(s)`, "", `$${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}/mo`, "", ""];
+        const subTotalRow = [`${subs.length} active subscription(s)`, "", fmtCurrency(subSummary.totalMonthlySubscriptionSpend) + "/mo", "", ""];
         subRows.push(subTotalRow);
         drawTable(
           [
