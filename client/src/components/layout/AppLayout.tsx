@@ -4,7 +4,7 @@ import { useAuth, useLogout } from "@/hooks/use-auth";
 import { LayoutDashboard, Wallet, PieChart, Sparkles, LogOut, Menu, Landmark, Repeat, ChevronRight } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { ProfileDrawer } from "@/components/ProfileDrawer";
+import { ProfileModal } from "@/components/ProfileModal";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -131,8 +131,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </main>
 
-      {/* Profile Drawer */}
-      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
+      {/* Profile Modal */}
+      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

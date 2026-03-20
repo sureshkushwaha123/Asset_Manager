@@ -24,6 +24,12 @@ export interface IStorage {
   logActivity(userId: number, action: string, ipAddress?: string, device?: string): Promise<void>;
   getUserActivity(userId: number): Promise<UserActivity[]>;
 
+  // Password Resets
+  invalidatePreviousResetTokens(userId: number): Promise<void>;
+  createPasswordReset(userId: number, tokenHash: string, expiresAt: Date): Promise<void>;
+  findValidPasswordReset(tokenHash: string): Promise<{ id: number; userId: number } | undefined>;
+  markPasswordResetUsed(id: number): Promise<void>;
+
   getAccounts(userId: number): Promise<Account[]>;
   createAccount(account: InsertAccount): Promise<Account>;
 
@@ -95,6 +101,33 @@ export class DatabaseStorage implements IStorage {
 
   async getUserActivity(userId: number): Promise<UserActivity[]> {
     return await db.select().from(userActivity).where(eq(userActivity.userId, userId)).orderBy(desc(userActivity.createdAt)).limit(20);
+  }
+
+  async invalidatePreviousResetTokens(userId: number): Promise<void> {
+    await db.update(passwordResets).set({ used: true }).where(eq(passwordResets.userId, userId));
+  }
+
+  async createPasswordReset(userId: number, tokenHash: string, expiresAt: Date): Promise<void> {
+    await db.insert(passwordResets).values({ userId, tokenHash, expiresAt });
+  }
+
+  async findValidPasswordReset(tokenHash: string): Promise<{ id: number; userId: number } | undefined> {
+    const now = new Date();
+    const [row] = await db
+      .select()
+      .from(passwordResets)
+      .where(
+        and(
+          eq(passwordResets.tokenHash, tokenHash),
+          eq(passwordResets.used, false),
+          gt(passwordResets.expiresAt, now)
+        )
+      );
+    return row ? { id: row.id, userId: row.userId } : undefined;
+  }
+
+  async markPasswordResetUsed(id: number): Promise<void> {
+    await db.update(passwordResets).set({ used: true }).where(eq(passwordResets.id, id));
   }
 
   async getAccounts(userId: number): Promise<Account[]> {

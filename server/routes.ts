@@ -5,6 +5,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 import { runSubscriptionDetection, runNightlyDetection } from "./subscriptionDetector";
@@ -66,6 +67,62 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const user = await storage.getUser(req.user.id);
     if (!user) return res.status(401).json({ message: "User not found" });
     res.json(user);
+  });
+
+  // ---- Forgot / Reset Password ----
+
+  app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+      const { identifier } = z.object({ identifier: z.string().min(1) }).parse(req.body);
+      const user = await storage.getUserByUsername(identifier);
+
+      // Always return the same response to avoid revealing user existence
+      const safeResponse = { message: "If that account exists, a reset link has been generated." };
+
+      if (!user) return res.json(safeResponse);
+
+      // Invalidate any previous unused tokens
+      await storage.invalidatePreviousResetTokens(user.id);
+
+      // Generate cryptographically secure token
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      await storage.createPasswordReset(user.id, tokenHash, expiresAt);
+
+      const resetLink = `/reset-password?token=${rawToken}`;
+      res.json({ message: "Reset link generated", resetLink });
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      console.error("Forgot password error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { token, newPassword } = z.object({
+        token: z.string().min(1),
+        newPassword: z.string().min(6, "Password must be at least 6 characters"),
+      }).parse(req.body);
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const record = await storage.findValidPasswordReset(tokenHash);
+
+      if (!record) return res.status(400).json({ message: "This reset link is invalid or has expired. Please request a new one." });
+
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await storage.updateUserPassword(record.userId, hashed);
+      await storage.markPasswordResetUsed(record.id);
+      await storage.logActivity(record.userId, "Password reset via forgot-password flow");
+
+      res.json({ message: "Password has been reset successfully." });
+    } catch (err) {
+      if (err instanceof z.ZodError) return res.status(400).json({ message: err.errors[0].message });
+      console.error("Reset password error:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   // ---- User Profile Routes ----
