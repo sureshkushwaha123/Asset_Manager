@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useTransactions, useCreateTransaction } from "@/hooks/use-transactions";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useCurrency } from "@/hooks/use-currency";
 import { format } from "date-fns";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,6 +30,7 @@ type FilterType = 'ALL' | 'DEBIT' | 'CREDIT' | 'RECURRING';
 export default function Transactions() {
   const [filter, setFilter] = useState<FilterType>('ALL');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const currency = useCurrency();
 
   const { data: accounts } = useAccounts();
   const { data: transactionsData, isLoading } = useTransactions(
@@ -220,7 +222,7 @@ export default function Transactions() {
                       </div>
                     </div>
                     <p className={`text-sm font-semibold ${tx.type === 'CREDIT' ? 'text-emerald-500' : 'text-destructive'}`}>
-                      {tx.type === 'CREDIT' ? '+' : '-'}${parseFloat(tx.amount).toFixed(2)}
+                      {tx.type === 'CREDIT' ? '+' : '-'}{currency.format(parseFloat(tx.amount))}
                     </p>
                   </div>
                 ))}

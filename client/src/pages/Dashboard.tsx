@@ -3,11 +3,12 @@ import { useAccounts } from "@/hooks/use-accounts";
 import { useFinancialHealth } from "@/hooks/use-financial-health";
 import { useDownloadMonthlyReport } from "@/hooks/use-report";
 import { useSubscriptions, useUpcomingSubscriptions, useSubscriptionSummary, useDeactivateSubscription } from "@/hooks/use-subscriptions";
+import { useCurrency } from "@/hooks/use-currency";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowUpRight, ArrowDownRight, DollarSign, Wallet, Activity, TrendingUp, Download,
+  ArrowUpRight, ArrowDownRight, Wallet, Activity, TrendingUp, Download,
   Repeat, XCircle, CalendarClock, AlertTriangle
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -27,6 +28,7 @@ export default function Dashboard() {
   const { data: upcoming } = useUpcomingSubscriptions();
   const deactivate = useDeactivateSubscription();
   const downloadReport = useDownloadMonthlyReport();
+  const currency = useCurrency();
 
   const handleDownloadReport = async () => {
     setIsDownloading(true);
@@ -91,7 +93,7 @@ export default function Dashboard() {
                   <Wallet className="w-5 h-5 text-primary" />
                 </div>
               </div>
-              <h3 className="text-3xl font-display font-bold text-white">${totalBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+              <h3 className="text-3xl font-display font-bold text-white">{currency.format(totalBalance)}</h3>
             </CardContent>
           </Card>
           <Card className="glass-card hover-elevate">
@@ -102,7 +104,7 @@ export default function Dashboard() {
                   <ArrowUpRight className="w-5 h-5 text-emerald-500" />
                 </div>
               </div>
-              <h3 className="text-3xl font-display font-bold text-white">${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+              <h3 className="text-3xl font-display font-bold text-white">{currency.format(totalIncome)}</h3>
             </CardContent>
           </Card>
           <Card className="glass-card hover-elevate">
@@ -113,7 +115,7 @@ export default function Dashboard() {
                   <ArrowDownRight className="w-5 h-5 text-destructive" />
                 </div>
               </div>
-              <h3 className="text-3xl font-display font-bold text-white">${totalExpense.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+              <h3 className="text-3xl font-display font-bold text-white">{currency.format(totalExpense)}</h3>
             </CardContent>
           </Card>
         </div>
@@ -131,7 +133,7 @@ export default function Dashboard() {
                 {subSummary && (
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Monthly</p>
-                    <p className="text-sm font-bold text-white">${subSummary.totalMonthlySubscriptionSpend.toFixed(2)}</p>
+                    <p className="text-sm font-bold text-white">{currency.format(subSummary.totalMonthlySubscriptionSpend)}</p>
                   </div>
                 )}
                 <Link href="/subscriptions">
@@ -156,7 +158,7 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-white">${parseFloat(sub.averageAmount as unknown as string).toFixed(2)}</p>
+                        <p className="text-sm font-bold text-white">{currency.formatRaw(sub.averageAmount)}</p>
                         <Button
                           size="sm"
                           variant="ghost"
@@ -220,7 +222,7 @@ export default function Dashboard() {
                           </div>
                         </div>
                         <p className={`text-sm font-bold ${isUrgent ? "text-rose-400" : "text-white"}`}>
-                          ${parseFloat(sub.averageAmount as unknown as string).toFixed(2)}
+                          {currency.formatRaw(sub.averageAmount)}
                         </p>
                       </div>
                     );
@@ -301,8 +303,13 @@ export default function Dashboard() {
                     <BarChart data={monthlySpending} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
                       <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
-                      <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '12px', color: '#fff' }} itemStyle={{ color: '#fff' }} cursor={{ fill: '#ffffff05' }} />
+                      <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${currency.symbol}${v}`} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '12px', color: '#fff' }}
+                        itemStyle={{ color: '#fff' }}
+                        cursor={{ fill: '#ffffff05' }}
+                        formatter={(value: number) => [currency.format(value), '']}
+                      />
                       <Bar dataKey="income" name="Income" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
                       <Bar dataKey="expense" name="Expense" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={40} />
                     </BarChart>
@@ -328,7 +335,10 @@ export default function Dashboard() {
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '12px', color: '#fff' }} formatter={(value: number) => [`$${value.toFixed(2)}`, 'Amount']} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '12px', color: '#fff' }}
+                        formatter={(value: number) => [currency.format(value), 'Amount']}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 ) : (

@@ -7,6 +7,7 @@ import {
   useNotifications,
   useMarkNotificationRead,
 } from "@/hooks/use-subscriptions";
+import { useCurrency } from "@/hooks/use-currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,7 @@ export default function Subscriptions() {
   const { data: notifications } = useNotifications();
   const deactivate = useDeactivateSubscription();
   const markRead = useMarkNotificationRead();
+  const currency = useCurrency();
 
   const unreadNotifications = (notifications || []).filter(n => !n.isRead);
 
@@ -82,7 +84,7 @@ export default function Subscriptions() {
                 </div>
               </div>
               <p data-testid="text-monthly-spend" className="text-3xl font-display font-bold text-white">
-                ${(summary?.totalMonthlySubscriptionSpend ?? 0).toFixed(2)}
+                {currency.format(summary?.totalMonthlySubscriptionSpend ?? 0)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">estimated per month</p>
             </CardContent>
@@ -148,7 +150,7 @@ export default function Subscriptions() {
                       </div>
                     </div>
                     <p className={`text-sm font-bold ${isUrgent ? "text-rose-400" : "text-white"}`}>
-                      ${parseFloat(sub.averageAmount as unknown as string).toFixed(2)}
+                      {currency.formatRaw(sub.averageAmount)}
                     </p>
                   </div>
                 );
@@ -233,7 +235,7 @@ export default function Subscriptions() {
                       <div className="flex items-center gap-4 shrink-0">
                         <div className="text-right">
                           <p className="text-sm font-bold text-white">
-                            ${parseFloat(sub.averageAmount as unknown as string).toFixed(2)}
+                            {currency.formatRaw(sub.averageAmount)}
                           </p>
                           <p className="text-xs text-muted-foreground">avg / {sub.cycle}</p>
                         </div>

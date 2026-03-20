@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAccounts, useCreateAccount } from "@/hooks/use-accounts";
+import { useCurrency } from "@/hooks/use-currency";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -56,6 +57,7 @@ export default function Accounts() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { data: accounts, isLoading } = useAccounts();
   const createAccount = useCreateAccount();
+  const currency = useCurrency();
 
   const form = useForm<AccountForm>({
     resolver: zodResolver(accountSchema),
@@ -228,11 +230,7 @@ export default function Accounts() {
                         data-testid={`text-balance-${acc.id}`}
                         className={`text-3xl font-display font-bold ${balance < 0 ? "text-destructive" : "text-white"}`}
                       >
-                        {balance < 0 ? "-" : ""}$
-                        {Math.abs(balance).toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {currency.format(balance)}
                       </p>
                     </div>
                   </CardContent>

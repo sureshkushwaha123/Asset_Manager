@@ -31,6 +31,7 @@ import {
   useUpdateNotifications, useDeleteAccount,
 } from "@/hooks/use-profile";
 import { useLogout } from "@/hooks/use-auth";
+import { useCurrency } from "@/hooks/use-currency";
 
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "SGD"];
 
@@ -74,6 +75,7 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
   const updateNotifs = useUpdateNotifications();
   const deleteAccount = useDeleteAccount();
   const logout = useLogout();
+  const currency = useCurrency();
 
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -124,8 +126,6 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
 
   const healthColor = (score: number) =>
     score >= 80 ? "text-emerald-400" : score >= 60 ? "text-yellow-400" : score >= 40 ? "text-orange-400" : "text-red-400";
-
-  const currency = profile?.defaultCurrency || "INR";
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -447,7 +447,7 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
                   {[
                     {
                       label: "Current Balance",
-                      value: `${currency} ${summary.currentBalance.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+                      value: currency.format(summary.currentBalance),
                       icon: Wallet,
                       color: "text-primary",
                       bg: "bg-primary/10",
@@ -455,7 +455,7 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
                     },
                     {
                       label: "Monthly Spending",
-                      value: `${currency} ${summary.totalMonthlySpending.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
+                      value: currency.format(summary.totalMonthlySpending),
                       icon: TrendingUp,
                       color: "text-red-400",
                       bg: "bg-red-400/10",

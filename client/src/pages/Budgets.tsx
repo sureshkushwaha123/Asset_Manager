@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useBudgets, useCreateBudget } from "@/hooks/use-budgets";
 import { useTransactions } from "@/hooks/use-transactions";
+import { useCurrency } from "@/hooks/use-currency";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -27,6 +28,7 @@ export default function Budgets() {
   const { data: budgets, isLoading: isBudgetsLoading } = useBudgets();
   const { data: txData } = useTransactions({ type: 'DEBIT' });
   const createBudget = useCreateBudget();
+  const currency = useCurrency();
 
   const form = useForm<BudgetForm>({
     resolver: zodResolver(budgetSchema),
@@ -92,7 +94,7 @@ export default function Budgets() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-white/80">Monthly Limit ($)</Label>
+                  <Label className="text-white/80">Monthly Limit ({currency.code})</Label>
                   <Input 
                     type="number" step="0.01"
                     {...form.register("monthlyLimit")}
@@ -153,8 +155,8 @@ export default function Budgets() {
                   <CardContent>
                     <div className="mb-4">
                       <div className="flex justify-between text-sm mb-2">
-                        <span className="text-muted-foreground">Spent: <span className="text-white font-medium">${spent.toFixed(2)}</span></span>
-                        <span className="text-muted-foreground">Limit: <span className="text-white font-medium">${limit.toFixed(2)}</span></span>
+                        <span className="text-muted-foreground">Spent: <span className="text-white font-medium">{currency.format(spent)}</span></span>
+                        <span className="text-muted-foreground">Limit: <span className="text-white font-medium">{currency.format(limit)}</span></span>
                       </div>
                       <Progress 
                         value={percentage} 
@@ -162,9 +164,9 @@ export default function Budgets() {
                       />
                     </div>
                     <p className={`text-sm ${isOver ? 'text-destructive' : isWarning ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                      {isOver 
-                        ? `Over budget by ${(spent - limit).toFixed(2)}` 
-                        : `${(limit - spent).toFixed(2)} remaining this month`}
+                      {isOver
+                        ? `Over budget by ${currency.format(spent - limit)}`
+                        : `${currency.format(limit - spent)} remaining this month`}
                     </p>
                   </CardContent>
                 </Card>
