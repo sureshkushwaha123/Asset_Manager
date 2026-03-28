@@ -6,7 +6,7 @@ A full-stack personal finance management application with AI-driven insights, au
 ## Tech Stack
 - **Frontend**: React + Vite, TanStack Query, Shadcn UI, Recharts, Wouter, Tailwind CSS
 - **Backend**: Node.js + Express, Drizzle ORM, PostgreSQL
-- **AI**: OpenAI via Replit AI Integrations (gpt-5.1)
+- **AI**: Google Gemini (`gemini-1.5-flash`) via `@google/generative-ai`
 - **Auth**: JWT (jsonwebtoken) + bcryptjs
 - **PDF**: pdfkit
 
@@ -28,17 +28,17 @@ A full-stack personal finance management application with AI-driven insights, au
 | `/transactions` | Transactions | Add/view transactions with recurring badge + filter |
 | `/subscriptions` | Subscriptions | Auto-detected recurring charges, upcoming debits, notifications |
 | `/budgets` | Budgets | Category spending limits with alerts |
-| `/advisor` | AI Advisor | OpenAI-powered financial chatbot |
+| `/advisor` | AI Advisor | Gemini-powered financial chatbot |
 
 ## Key Features
 - **JWT Authentication**: Login/Register with bcrypt password hashing
 - **Account Management**: Create bank/savings/credit accounts
-- **Transactions**: CRUD with AI auto-categorization (OpenAI)
+- **Transactions**: CRUD with AI auto-categorization (Gemini)
 - **Subscription Detection**: Automatic pattern recognition using:
   - String similarity grouping (bigram-based)
   - Cycle detection (monthly/weekly/yearly)
   - Amount variance checking (<15%)
-  - OpenAI merchant validation ("Is X a subscription service?")
+  - Gemini merchant validation ("Is X a subscription service?")
   - Confidence scoring (interval + amount consistency + repetitions)
 - **Notifications**: Auto-generated alerts for upcoming auto-debits (within 3 days)
 - **Financial Health Score**: 0-100 composite score (savings rate, budget adherence, category balance, income/expense ratio)

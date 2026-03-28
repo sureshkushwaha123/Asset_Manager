@@ -1,12 +1,7 @@
 import { db } from "./db";
 import { transactions, subscriptions, notifications } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { generateText } from "./config/gemini";
 
 const NON_SUBSCRIPTION_CATEGORIES = ["Food", "Groceries", "Fuel", "Travel"];
 const MIN_OCCURRENCES = 3;
@@ -99,18 +94,10 @@ function calculateConfidenceScore(
 
 async function isSubscriptionMerchant(merchantName: string): Promise<boolean> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.1",
-      messages: [
-        {
-          role: "user",
-          content: `Is "${merchantName}" a recurring subscription service (like Netflix, Spotify, SaaS tools, gyms, insurance, etc.)? Answer only YES or NO.`,
-        },
-      ],
-      max_completion_tokens: 5,
-    });
-    const answer = response.choices[0]?.message?.content?.trim().toUpperCase() || "NO";
-    return answer.startsWith("YES");
+    const answer = await generateText(
+      `Is "${merchantName}" a recurring subscription service (like Netflix, Spotify, SaaS tools, gyms, insurance, etc.)? Answer only YES or NO.`
+    );
+    return answer.trim().toUpperCase().startsWith("YES");
   } catch {
     return true; // Default to allow if AI fails
   }

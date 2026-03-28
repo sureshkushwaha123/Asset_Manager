@@ -6,16 +6,11 @@ import { z } from "zod";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
-import OpenAI from "openai";
 import PDFDocument from "pdfkit";
 import { runSubscriptionDetection, runNightlyDetection } from "./subscriptionDetector";
+import { generateText } from "./config/gemini";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "fallback_secret_for_dev";
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
 
 const authenticateToken = (req: any, res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -340,15 +335,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       let category = input.category;
       if (!category) {
         try {
-          const response = await openai.chat.completions.create({
-            model: "gpt-5.1",
-            messages: [
-              { role: "system", content: "Classify this transaction into a financial category. Possible categories: Food, Travel, Bills, Entertainment, Subscription, Shopping, Salary, Other. Reply with JUST the category name." },
-              { role: "user", content: input.description }
-            ],
-            max_completion_tokens: 10,
-          });
-          category = response.choices[0].message.content?.trim() || "Other";
+          const catText = await generateText(
+            `Classify this transaction into exactly one of these financial categories: Food, Travel, Bills, Entertainment, Subscription, Shopping, Salary, Other.\nTransaction description: "${input.description}"\nReply with ONLY the category name, nothing else.`
+          );
+          category = catText.trim().split(/\s+/)[0] || "Other";
         } catch {
           category = "Other";
         }
@@ -479,18 +469,11 @@ Upcoming Auto-Debits (next 7 days): ${upcomingNames || "None"}
 
 You are a helpful AI Financial Advisor. Provide clear, actionable advice. Reference subscriptions when relevant.`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5.1",
-        messages: [
-          { role: "system", content: contextStr },
-          { role: "user", content: input.prompt }
-        ],
-      });
-
-      res.json({ answer: response.choices[0].message.content });
+      const answer = await generateText(`${contextStr}\n\nUser question: ${input.prompt}`);
+      res.json({ answer });
     } catch (err) {
-      console.error("AI Error:", err);
-      res.status(500).json({ message: "Failed to generate AI response" });
+      console.error("AI Advisor Error:", err);
+      res.json({ answer: "I'm unable to process your request right now. Please check your spending patterns and try to maintain a healthy savings rate." });
     }
   });
 
@@ -553,12 +536,20 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
       if (categorySpending["Subscription"] && (categorySpending["Subscription"] / totalExpense) * 100 > 5) recommendations.push("Review and cancel unused subscriptions");
       if (recommendations.length === 0) recommendations.push("Keep maintaining your current spending habits!");
 
-      const summaryResponse = await openai.chat.completions.create({
-        model: "gpt-5.1",
-        messages: [{ role: "user", content: `Financial health score ${score}/100, savings rate ${savingsRate.toFixed(1)}%. Write a 1-sentence summary of their financial status. Be honest but encouraging.` }],
-        max_completion_tokens: 60,
-      });
-      const summary = summaryResponse.choices[0]?.message?.content || "Your financial health is on track.";
+      let summary = "Your financial health is on track.";
+      try {
+        summary = await generateText(
+          `Financial health score ${score}/100, savings rate ${savingsRate.toFixed(1)}%. Write a 1-sentence summary of their financial status. Be honest but encouraging. Reply with just the sentence.`
+        );
+      } catch {
+        summary = score >= 80
+          ? "Excellent financial health — keep up the great work!"
+          : score >= 60
+          ? "Your finances are in good shape with room to improve."
+          : score >= 40
+          ? "Your finances need attention — focus on building your savings."
+          : "Your finances need significant improvement — start by tracking spending.";
+      }
 
       res.json({
         score, summary, insights, recommendations,
@@ -624,12 +615,14 @@ You are a helpful AI Financial Advisor. Provide clear, actionable advice. Refere
 
       const healthScore = Math.round(Math.min(100, savingsRateScore + budgetAdherenceScore + categoryBalanceScore + incomeExpenseScore));
 
-      const adviceResponse = await openai.chat.completions.create({
-        model: "gpt-5.1",
-        messages: [{ role: "user", content: `Income ${fmtCurrency(totalIncome)}, expenses ${fmtCurrency(totalExpense)}, savings rate ${savingsRate.toFixed(1)}%, ${subSummary.activeSubscriptionCount} subscriptions costing ${fmtCurrency(subSummary.totalMonthlySubscriptionSpend)}/month. Provide 2-3 sentences of financial advice.` }],
-        max_completion_tokens: 120,
-      });
-      const aiAdvice = adviceResponse.choices[0]?.message?.content || "Maintain consistent spending habits and review your budget monthly.";
+      let aiAdvice = "Maintain consistent spending habits and review your budget monthly.";
+      try {
+        aiAdvice = await generateText(
+          `Income ${fmtCurrency(totalIncome)}, expenses ${fmtCurrency(totalExpense)}, savings rate ${savingsRate.toFixed(1)}%, ${subSummary.activeSubscriptionCount} subscriptions costing ${fmtCurrency(subSummary.totalMonthlySubscriptionSpend)}/month. Provide 2-3 sentences of personalized financial advice. Be direct and actionable.`
+        );
+      } catch {
+        aiAdvice = "Maintain consistent spending habits and review your budget monthly. Focus on increasing your savings rate and reducing discretionary expenses.";
+      }
 
       const PAGE_MARGIN = 50;
       const PAGE_WIDTH = 595.28; // A4
