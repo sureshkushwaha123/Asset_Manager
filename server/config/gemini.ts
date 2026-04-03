@@ -7,7 +7,7 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || "");
 
-export const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+export const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 export async function generateText(prompt: string): Promise<string> {
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
