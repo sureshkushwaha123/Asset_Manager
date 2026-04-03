@@ -414,6 +414,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post('/api/subscriptions', authenticateToken, async (req: any, res) => {
+    try {
+      const schema = z.object({
+        merchantName: z.string().min(1),
+        averageAmount: z.union([z.string(), z.number()]).transform(v => String(v)),
+        cycle: z.enum(["monthly", "weekly", "yearly"]),
+        nextExpectedDate: z.string().transform(v => new Date(v)),
+      });
+      const input = schema.parse(req.body);
+      const now = new Date();
+      const sub = await storage.createSubscription({
+        userId: req.user.id,
+        merchantName: input.merchantName,
+        averageAmount: input.averageAmount,
+        cycle: input.cycle,
+        lastDetectedDate: now,
+        nextExpectedDate: input.nextExpectedDate,
+        confidenceScore: 1.0,
+        isActive: true,
+      });
+      res.json(sub);
+    } catch (err) {
+      res.status(400).json({ message: "Failed to create subscription" });
+    }
+  });
+
   app.post('/api/subscriptions/deactivate/:id', authenticateToken, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);

@@ -34,6 +34,30 @@ export function useSubscriptionSummary() {
   });
 }
 
+export function useCreateSubscription() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (data: { merchantName: string; averageAmount: string; cycle: string; nextExpectedDate: string }) => {
+      const res = await fetchWithAuth('/api/subscriptions', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.subscriptions.list.path] });
+      queryClient.invalidateQueries({ queryKey: [api.subscriptions.upcoming.path] });
+      queryClient.invalidateQueries({ queryKey: [api.subscriptions.summary.path] });
+      toast({ title: "Subscription Added", description: "Your subscription has been saved." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add subscription.", variant: "destructive" });
+    },
+  });
+}
+
 export function useDeactivateSubscription() {
   const queryClient = useQueryClient();
   const { toast } = useToast();

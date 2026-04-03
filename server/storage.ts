@@ -45,6 +45,7 @@ export interface IStorage {
   getUpcomingSubscriptions(userId: number, withinDays?: number): Promise<Subscription[]>;
   getSubscriptionSummary(userId: number): Promise<{ totalMonthlySubscriptionSpend: number; activeSubscriptionCount: number }>;
   deactivateSubscription(id: number, userId: number): Promise<void>;
+  createSubscription(data: InsertSubscription): Promise<Subscription>;
   upsertSubscription(data: Omit<InsertSubscription, never>): Promise<Subscription>;
 
   // Notifications
@@ -245,6 +246,11 @@ export class DatabaseStorage implements IStorage {
       .update(subscriptions)
       .set({ isActive: false })
       .where(and(eq(subscriptions.id, id), eq(subscriptions.userId, userId)));
+  }
+
+  async createSubscription(data: InsertSubscription): Promise<Subscription> {
+    const [created] = await db.insert(subscriptions).values(data).returning();
+    return created;
   }
 
   async upsertSubscription(data: InsertSubscription): Promise<Subscription> {
