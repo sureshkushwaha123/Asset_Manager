@@ -42,10 +42,10 @@ export default function Budgets() {
   const onSubmit = (data: BudgetForm) => {
     // Ensure all required fields are present and valid
     const validatedData = {
-      category: data.category,
-      monthlyLimit: Number(data.monthlyLimit),
-      alertThreshold: Number(data.alertThreshold || 80)
-    };
+  category: data.category,
+  monthlyLimit: String(data.monthlyLimit),
+  alertThreshold: String(data.alertThreshold || 80)
+};
     createBudget.mutate(validatedData, {
       onSuccess: () => {
         setIsDialogOpen(false);

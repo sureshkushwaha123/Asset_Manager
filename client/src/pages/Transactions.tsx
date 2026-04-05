@@ -48,10 +48,18 @@ export default function Transactions() {
   });
 
   const onSubmit = (data: TransactionForm) => {
-    createTx.mutate(data, {
-      onSuccess: () => { setIsDialogOpen(false); form.reset(); }
-    });
+  const formattedData = {
+    ...data,
+    amount: String(data.amount),
   };
+
+  createTx.mutate(formattedData, {
+    onSuccess: () => { 
+      setIsDialogOpen(false); 
+      form.reset(); 
+    }
+  });
+};
 
   const transactions = transactionsData?.items || [];
   const accountMap = Object.fromEntries((accounts || []).map(a => [a.id, a.accountName]));
